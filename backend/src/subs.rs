@@ -8,8 +8,250 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::path::Path;
-use std::sync::Arc;
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
+
+const MAX_FETCHED_SUBTITLE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_SUBTITLE_REDIRECTS: usize = 5;
+const SUBTITLE_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const SUBTITLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const SUBTITLE_FETCH_DEADLINE: Duration = Duration::from_secs(180);
+const SUBTITLE_TRANSLATE_DEADLINE: Duration = Duration::from_secs(600);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubtitleFetchError {
+    InvalidUrl,
+    BlockedAddress,
+    ResolveFailed,
+    RequestFailed,
+    TimedOut,
+    TooManyRedirects,
+    TooLarge,
+}
+
+impl SubtitleFetchError {
+    fn label(self) -> &'static str {
+        match self {
+            Self::InvalidUrl => "invalid url",
+            Self::BlockedAddress => "blocked address",
+            Self::ResolveFailed => "dns failed",
+            Self::RequestFailed => "request failed",
+            Self::TimedOut => "timed out",
+            Self::TooManyRedirects => "too many redirects",
+            Self::TooLarge => "response too large",
+        }
+    }
+}
+
+struct FetchedSubtitle {
+    status: StatusCode,
+    content_type: String,
+    bytes: Vec<u8>,
+}
+
+fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            let [a, b, c, _] = ip.octets();
+            !(a == 0
+                || a == 10
+                || a == 127
+                || (a == 100 && (64..=127).contains(&b))
+                || (a == 169 && b == 254)
+                || (a == 172 && (16..=31).contains(&b))
+                || (a == 192 && b == 0 && c == 0)
+                || (a == 192 && b == 0 && c == 2)
+                || (a == 192 && b == 88 && c == 99)
+                || (a == 192 && b == 168)
+                || (a == 198 && (b == 18 || b == 19))
+                || (a == 198 && b == 51 && c == 100)
+                || (a == 203 && b == 0 && c == 113)
+                || a >= 224)
+        }
+        IpAddr::V6(ip) => {
+            if let Some(v4) = ip.to_ipv4() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+
+            let segments = ip.segments();
+            let first = segments[0];
+            if first & 0xfe00 == 0xfc00
+                || first & 0xffc0 == 0xfe80
+                || first & 0xffc0 == 0xfec0
+                || first & 0xff00 == 0xff00
+                || (segments[0] == 0x2001 && segments[1] < 0x0200)
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8)
+                || (segments[0] == 0x3fff && segments[1] & 0xf000 == 0)
+            {
+                return false;
+            }
+
+            first & 0xe000 == 0x2000
+        }
+    }
+}
+
+fn parse_subtitle_url(raw: &str) -> Result<reqwest::Url, SubtitleFetchError> {
+    let url = reqwest::Url::parse(raw).map_err(|_| SubtitleFetchError::InvalidUrl)?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.host_str().is_none()
+        || url.port_or_known_default().is_none()
+    {
+        return Err(SubtitleFetchError::InvalidUrl);
+    }
+
+    if let Some(ip) = url.host_str().and_then(|host| {
+        host.strip_prefix('[')
+            .and_then(|host| host.strip_suffix(']'))
+            .unwrap_or(host)
+            .parse::<IpAddr>()
+            .ok()
+    }) {
+        if !is_public_ip(ip) {
+            return Err(SubtitleFetchError::BlockedAddress);
+        }
+    }
+
+    Ok(url)
+}
+
+async fn resolve_public_addrs(
+    url: &reqwest::Url,
+) -> Result<(String, Vec<SocketAddr>, bool), SubtitleFetchError> {
+    let raw_host = url.host_str().ok_or(SubtitleFetchError::InvalidUrl)?;
+    let host = raw_host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(raw_host)
+        .to_string();
+    let port = url
+        .port_or_known_default()
+        .ok_or(SubtitleFetchError::InvalidUrl)?;
+    let literal_ip = host.parse::<IpAddr>().ok();
+
+    let addrs = if let Some(ip) = literal_ip {
+        vec![SocketAddr::new(ip, port)]
+    } else {
+        tokio::net::lookup_host((host.as_str(), port))
+            .await
+            .map_err(|_| SubtitleFetchError::ResolveFailed)?
+            .collect::<Vec<_>>()
+    };
+
+    if addrs.is_empty() {
+        return Err(SubtitleFetchError::ResolveFailed);
+    }
+    if addrs.iter().any(|addr| !is_public_ip(addr.ip())) {
+        return Err(SubtitleFetchError::BlockedAddress);
+    }
+
+    Ok((host, addrs, literal_ip.is_some()))
+}
+
+async fn fetch_public_subtitle_once(raw_url: &str) -> Result<FetchedSubtitle, SubtitleFetchError> {
+    let mut url = parse_subtitle_url(raw_url)?;
+
+    for redirect in 0..=MAX_SUBTITLE_REDIRECTS {
+        let (host, addrs, literal_ip) = resolve_public_addrs(&url).await?;
+        let mut builder = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(SUBTITLE_CONNECT_TIMEOUT)
+            .timeout(SUBTITLE_REQUEST_TIMEOUT)
+            .no_proxy();
+        if !literal_ip {
+            builder = builder.resolve_to_addrs(&host, &addrs);
+        }
+        let client = builder
+            .build()
+            .map_err(|_| SubtitleFetchError::RequestFailed)?;
+        let mut response = client
+            .get(url.clone())
+            .header(
+                header::ACCEPT,
+                "text/vtt, application/x-subrip, text/plain, */*",
+            )
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    SubtitleFetchError::TimedOut
+                } else {
+                    SubtitleFetchError::RequestFailed
+                }
+            })?;
+
+        if response.status().is_redirection() {
+            if redirect == MAX_SUBTITLE_REDIRECTS {
+                return Err(SubtitleFetchError::TooManyRedirects);
+            }
+            let location = response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or(SubtitleFetchError::InvalidUrl)?;
+            url = parse_subtitle_url(
+                url.join(location)
+                    .map_err(|_| SubtitleFetchError::InvalidUrl)?
+                    .as_str(),
+            )?;
+            continue;
+        }
+
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        if !status.is_success() {
+            return Ok(FetchedSubtitle {
+                status,
+                content_type,
+                bytes: Vec::new(),
+            });
+        }
+        if response
+            .content_length()
+            .is_some_and(|size| size > MAX_FETCHED_SUBTITLE_BYTES as u64)
+        {
+            return Err(SubtitleFetchError::TooLarge);
+        }
+
+        let mut bytes = Vec::with_capacity(
+            response
+                .content_length()
+                .unwrap_or_default()
+                .min(MAX_FETCHED_SUBTITLE_BYTES as u64) as usize,
+        );
+        while let Some(chunk) = response.chunk().await.map_err(|e| {
+            if e.is_timeout() {
+                SubtitleFetchError::TimedOut
+            } else {
+                SubtitleFetchError::RequestFailed
+            }
+        })? {
+            if bytes.len().saturating_add(chunk.len()) > MAX_FETCHED_SUBTITLE_BYTES {
+                return Err(SubtitleFetchError::TooLarge);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+
+        return Ok(FetchedSubtitle {
+            status,
+            content_type,
+            bytes,
+        });
+    }
+
+    Err(SubtitleFetchError::TooManyRedirects)
+}
 
 pub fn detect_lang_from_file(path: &Path) -> Option<&'static str> {
     let raw = std::fs::read_to_string(path).ok()?;
@@ -340,6 +582,16 @@ fn rewrite_wyzie_encoding(url: &str, lang: &str) -> String {
         .collect();
     kept.push(format!("encoding={enc}"));
     format!("{base}?{}", kept.join("&"))
+}
+
+fn is_wyzie_url(url: &reqwest::Url) -> bool {
+    url.host_str()
+        .is_some_and(|host| host.eq_ignore_ascii_case("sub.wyzie.io"))
+}
+
+fn is_wyzie_translate_url(url: &reqwest::Url) -> bool {
+    is_wyzie_url(url)
+        && (url.path().contains("/translate") || url.query_pairs().any(|(key, _)| key == "target"))
 }
 
 pub fn lang_label(code: &str) -> &'static str {
@@ -765,36 +1017,36 @@ pub async fn auto_fetch_for_owner(
             continue;
         }
 
-        let cli = reqwest::Client::new();
         let mut got: Option<(Vec<u8>, WyzieEntry)> = None;
         for (cand_idx, pick) in candidates.iter().enumerate() {
             let fetch_url = rewrite_wyzie_encoding(&pick.url, lang);
-            match cli.get(&fetch_url).send().await {
-                Ok(r) => {
-                    let status = r.status();
+            match tokio::time::timeout(
+                SUBTITLE_REQUEST_TIMEOUT,
+                fetch_public_subtitle_once(&fetch_url),
+            )
+            .await
+            {
+                Ok(Ok(fetched)) => {
+                    let status = fetched.status;
                     if !status.is_success() {
                         crate::pe!(
                             "[subs] auto-fetch {lang} cand {cand_idx}: HTTP {status}, trying next"
                         );
                         continue;
                     }
-                    match r.bytes().await {
-                        Ok(b) if !b.is_empty() => {
-                            got = Some((b.to_vec(), pick.clone()));
-                            break;
-                        }
-                        Ok(_) => {
-                            crate::pe!("[subs] auto-fetch {lang} cand {cand_idx}: empty body");
-                            continue;
-                        }
-                        Err(e) => {
-                            crate::pe!("[subs] auto-fetch {lang} cand {cand_idx} body: {e}");
-                            continue;
-                        }
+                    if fetched.bytes.is_empty() {
+                        crate::pe!("[subs] auto-fetch {lang} cand {cand_idx}: empty body");
+                        continue;
                     }
+                    got = Some((fetched.bytes, pick.clone()));
+                    break;
                 }
-                Err(e) => {
-                    crate::pe!("[subs] auto-fetch {lang} cand {cand_idx} req: {e}");
+                Ok(Err(e)) => {
+                    crate::pe!("[subs] auto-fetch {lang} cand {cand_idx}: {}", e.label());
+                    continue;
+                }
+                Err(_) => {
+                    crate::pe!("[subs] auto-fetch {lang} cand {cand_idx}: timed out");
                     continue;
                 }
             }
@@ -1088,16 +1340,18 @@ async fn wyzie_search(
             .get("https://sub.wyzie.io/search")
             .query(&params)
             .header("Accept", "*/*");
-        let final_url = req
-            .try_clone()
-            .and_then(|b| b.build().ok())
-            .map(|r| r.url().to_string())
-            .unwrap_or_default();
-        crate::pi!("[wyzie] GET {final_url}");
+        crate::pi!(
+            "[wyzie] search key #{idx} tmdb={tmdb_id} s={season:?} e={episode:?} lang={language}"
+        );
         let resp = match req.send().await {
             Ok(r) => r,
             Err(e) => {
-                crate::pe!("[wyzie] key #{idx} search req: {e}");
+                let reason = if e.is_timeout() {
+                    "timed out"
+                } else {
+                    "request failed"
+                };
+                crate::pe!("[wyzie] key #{idx} search {reason}");
                 continue;
             }
         };
@@ -1112,10 +1366,7 @@ async fn wyzie_search(
                 crate::pi!("[wyzie] {language} tmdb={tmdb_id}: empty result (not cached, will retry on next search)");
                 return Some(Vec::new());
             }
-            crate::pe!(
-                "[wyzie] key #{idx} {language}: {status} body: {}",
-                body.chars().take(200).collect::<String>()
-            );
+            crate::pe!("[wyzie] key #{idx} {language}: {status}");
             continue;
         }
         if !status.is_success() {
@@ -1133,9 +1384,6 @@ async fn wyzie_search(
             "[wyzie] key #{idx} {language}: 200 OK, body len={}",
             body.len()
         );
-        if body.len() < 500 {
-            crate::pi!("[wyzie] body: {}", body);
-        }
         match serde_json::from_str::<Vec<WyzieEntry>>(&body) {
             Ok(v) => {
                 if v.is_empty() {
@@ -1280,37 +1528,60 @@ async fn ai_translate(
         base.push(("episode".into(), e.to_string()));
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
     let mut bytes: Vec<u8> = Vec::new();
     let mut raw_fmt = String::from("srt");
     let mut last_status: Option<u16> = None;
+    let deadline = tokio::time::Instant::now() + SUBTITLE_TRANSLATE_DEADLINE;
     const TRANSLATE_RETRY_MS: u64 = 2_000;
     const TRANSLATE_MAX_ATTEMPTS: usize = 90;
 
     'outer: for (idx, k) in keys.iter().enumerate() {
         let mut p = vec![("key".into(), k.clone())];
         p.extend(base.clone());
+        let mut request_url =
+            reqwest::Url::parse("https://sub.wyzie.io/translate").expect("static wyzie url");
+        request_url
+            .query_pairs_mut()
+            .extend_pairs(p.iter().map(|(key, value)| (key.as_str(), value.as_str())));
 
         for attempt in 0..TRANSLATE_MAX_ATTEMPTS {
             if attempt > 0 {
+                if tokio::time::Instant::now() >= deadline {
+                    return (StatusCode::GATEWAY_TIMEOUT, "translation timed out").into_response();
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(TRANSLATE_RETRY_MS)).await;
             }
-            let resp = match client
-                .get("https://sub.wyzie.io/translate")
-                .query(&p)
-                .send()
-                .await
+            let fetched = match tokio::time::timeout_at(
+                deadline,
+                fetch_public_subtitle_once(request_url.as_str()),
+            )
+            .await
             {
-                Ok(r) => r,
-                Err(e) => {
-                    crate::pe!("[subs] translate key #{idx} attempt {attempt} req: {e}");
+                Ok(Ok(fetched)) => fetched,
+                Ok(Err(
+                    SubtitleFetchError::InvalidUrl
+                    | SubtitleFetchError::BlockedAddress
+                    | SubtitleFetchError::TooManyRedirects,
+                )) => {
+                    return (StatusCode::BAD_GATEWAY, "translation upstream rejected")
+                        .into_response()
+                }
+                Ok(Err(SubtitleFetchError::TooLarge)) => {
+                    return (StatusCode::BAD_GATEWAY, "translation response too large")
+                        .into_response()
+                }
+                Ok(Err(e)) => {
+                    crate::pe!(
+                        "[subs] translate key #{idx} attempt {attempt}: {}",
+                        e.label()
+                    );
                     continue;
                 }
+                Err(_) => {
+                    return (StatusCode::GATEWAY_TIMEOUT, "translation timed out").into_response()
+                }
             };
-            let status = resp.status();
+            let status = fetched.status;
             last_status = Some(status.as_u16());
             if status.as_u16() == 401 || status.as_u16() == 403 || status.as_u16() == 429 {
                 crate::pe!("[subs] translate key #{idx}: {status}, trying next key");
@@ -1324,7 +1595,7 @@ async fn ai_translate(
                 )
                     .into_response();
             }
-            if matches!(status.as_u16(), 502 | 503 | 504) {
+            if (502..=504).contains(&status.as_u16()) {
                 if attempt == 0 || attempt % 10 == 9 {
                     crate::pe!(
                         "[subs] translate key #{idx} attempt {}/{}: {} (still waiting)",
@@ -1339,26 +1610,14 @@ async fn ai_translate(
                 crate::pe!("[subs] translate key #{idx}: {status}, trying next key");
                 continue 'outer;
             }
-            let ctype = resp
-                .headers()
-                .get("content-type")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            let body = match resp.bytes().await {
-                Ok(b) => b.to_vec(),
-                Err(e) => {
-                    crate::pe!("[subs] translate body: {e}");
-                    continue;
-                }
-            };
+            let ctype = fetched.content_type;
+            let body = fetched.bytes;
             if body.is_empty() {
                 crate::pe!("[subs] translate key #{idx}: empty body");
                 continue;
             }
             if ctype.contains("application/json") || body.starts_with(b"{") {
-                let txt = String::from_utf8_lossy(&body[..body.len().min(200)]).to_string();
-                crate::pe!("[subs] translate key #{idx}: got json error: {txt}");
+                crate::pe!("[subs] translate key #{idx}: got json error response");
                 continue 'outer;
             }
             if ctype.contains("vtt") || body.starts_with(b"WEBVTT") {
@@ -1459,49 +1718,95 @@ async fn fetch_from_url(
     if body.owner_id.is_empty() || body.url.is_empty() {
         return (StatusCode::BAD_REQUEST, "owner_id and url required").into_response();
     }
-    if !body.url.starts_with("http://") && !body.url.starts_with("https://") {
-        return (StatusCode::BAD_REQUEST, "bad url").into_response();
-    }
 
     let language = body
         .language
         .clone()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "und".into());
-    let fetch_url = if body.url.contains("sub.wyzie") {
+    let original_url = match parse_subtitle_url(&body.url) {
+        Ok(url) => url,
+        Err(SubtitleFetchError::BlockedAddress) => {
+            return (StatusCode::BAD_REQUEST, "url target is not public").into_response()
+        }
+        Err(_) => return (StatusCode::BAD_REQUEST, "bad url").into_response(),
+    };
+    let fetch_url = if is_wyzie_url(&original_url) {
         rewrite_wyzie_encoding(&body.url, &language)
     } else {
         body.url.clone()
     };
-    crate::pi!("[subs] fetching {fetch_url}");
+    let parsed_url = match parse_subtitle_url(&fetch_url) {
+        Ok(url) => url,
+        Err(SubtitleFetchError::BlockedAddress) => {
+            return (StatusCode::BAD_REQUEST, "url target is not public").into_response()
+        }
+        Err(_) => return (StatusCode::BAD_REQUEST, "bad url").into_response(),
+    };
+    crate::pi!(
+        "[subs] fetching subtitle from {}",
+        parsed_url.host_str().unwrap_or("unknown")
+    );
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    let is_ai_translate = fetch_url.contains("/translate") || fetch_url.contains("target=");
+    let is_ai_translate = is_wyzie_translate_url(&parsed_url);
     let (retry_delay_ms, max_attempts) = if is_ai_translate {
         (2_000u64, 90usize)
     } else {
         (1_500u64, 5usize)
     };
+    let deadline = tokio::time::Instant::now()
+        + if is_ai_translate {
+            SUBTITLE_TRANSLATE_DEADLINE
+        } else {
+            SUBTITLE_FETCH_DEADLINE
+        };
     let mut bytes: Vec<u8> = Vec::new();
-    let mut last_err = String::new();
+    let mut last_err = "empty response";
+    let mut timed_out = false;
     for attempt in 0..max_attempts {
         if attempt > 0 {
+            if tokio::time::Instant::now() >= deadline {
+                timed_out = true;
+                last_err = "timed out";
+                break;
+            }
             tokio::time::sleep(std::time::Duration::from_millis(retry_delay_ms)).await;
         }
-        let resp = match client.get(&fetch_url).send().await {
-            Ok(r) => r,
-            Err(e) => {
-                last_err = format!("{e}");
-                crate::pe!("[subs] fetch attempt {attempt} req: {e}");
-                continue;
-            }
-        };
-        let status = resp.status();
-        if matches!(status.as_u16(), 502 | 503 | 504) {
-            last_err = format!("upstream {status}");
+        let fetched =
+            match tokio::time::timeout_at(deadline, fetch_public_subtitle_once(&fetch_url)).await {
+                Ok(Ok(fetched)) => fetched,
+                Ok(Err(SubtitleFetchError::InvalidUrl)) => {
+                    return (StatusCode::BAD_REQUEST, "bad url").into_response()
+                }
+                Ok(Err(SubtitleFetchError::BlockedAddress)) => {
+                    return (StatusCode::BAD_REQUEST, "url target is not public").into_response()
+                }
+                Ok(Err(SubtitleFetchError::TooLarge)) => {
+                    return (StatusCode::PAYLOAD_TOO_LARGE, "subtitle response too large")
+                        .into_response()
+                }
+                Ok(Err(SubtitleFetchError::TooManyRedirects)) => {
+                    return (StatusCode::BAD_GATEWAY, "too many upstream redirects").into_response()
+                }
+                Ok(Err(e)) => {
+                    last_err = e.label();
+                    crate::pe!(
+                        "[subs] fetch attempt {}/{}: {}",
+                        attempt + 1,
+                        max_attempts,
+                        e.label()
+                    );
+                    continue;
+                }
+                Err(_) => {
+                    timed_out = true;
+                    last_err = "timed out";
+                    break;
+                }
+            };
+        let status = fetched.status;
+        if (502..=504).contains(&status.as_u16()) {
+            last_err = "upstream unavailable";
             if attempt == 0 || attempt % 10 == 9 {
                 crate::pe!(
                     "[subs] fetch attempt {}/{}: {} (still waiting)",
@@ -1516,20 +1821,28 @@ async fn fetch_from_url(
             crate::pe!("[subs] fetch: {status}");
             return (StatusCode::BAD_GATEWAY, format!("upstream {status}")).into_response();
         }
-        match resp.bytes().await {
-            Ok(b) => {
-                bytes = b.to_vec();
+        if fetched.bytes.is_empty() {
+            last_err = "empty response";
+            crate::pe!(
+                "[subs] fetch attempt {}/{}: empty response",
+                attempt + 1,
+                max_attempts
+            );
+            if !is_ai_translate {
                 break;
             }
-            Err(e) => {
-                last_err = format!("body: {e}");
-                crate::pe!("[subs] fetch attempt {attempt} body: {e}");
-                continue;
-            }
+            continue;
         }
+        bytes = fetched.bytes;
+        break;
     }
     if bytes.is_empty() {
-        return (StatusCode::BAD_GATEWAY, format!("fetch failed: {last_err}")).into_response();
+        let status = if timed_out {
+            StatusCode::GATEWAY_TIMEOUT
+        } else {
+            StatusCode::BAD_GATEWAY
+        };
+        return (status, format!("fetch failed: {last_err}")).into_response();
     }
 
     let raw_format = body
@@ -1593,4 +1906,85 @@ async fn fetch_from_url(
     }
     crate::pi!("[subs] fetched wyzie sub {} for {}", sub.id, sub.owner_id);
     Json(sub).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subtitle_urls_reject_private_and_disguised_loopback_ips() {
+        for raw in [
+            "http://127.0.0.1/sub.srt",
+            "http://169.254.169.254/latest/meta-data",
+            "http://10.0.0.5/sub.srt",
+            "http://[::1]/sub.srt",
+            "http://[fc00::1]/sub.srt",
+            "http://2130706433/sub.srt",
+            "http://0x7f000001/sub.srt",
+        ] {
+            assert!(
+                matches!(
+                    parse_subtitle_url(raw),
+                    Err(SubtitleFetchError::BlockedAddress)
+                ),
+                "{raw} should be blocked"
+            );
+        }
+    }
+
+    #[test]
+    fn subtitle_urls_only_accept_plain_http_urls() {
+        assert!(parse_subtitle_url("https://example.com/sub.srt").is_ok());
+        assert!(matches!(
+            parse_subtitle_url("file:///etc/passwd"),
+            Err(SubtitleFetchError::InvalidUrl)
+        ));
+        assert!(matches!(
+            parse_subtitle_url("https://user:secret@example.com/sub.srt"),
+            Err(SubtitleFetchError::InvalidUrl)
+        ));
+    }
+
+    #[test]
+    fn wyzie_detection_requires_the_exact_host() {
+        let real = parse_subtitle_url("https://sub.wyzie.io/translate?target=Polish").unwrap();
+        let fake =
+            parse_subtitle_url("https://sub.wyzie.io.example.com/translate?target=Polish").unwrap();
+
+        assert!(is_wyzie_translate_url(&real));
+        assert!(!is_wyzie_url(&fake));
+        assert!(!is_wyzie_translate_url(&fake));
+    }
+
+    #[test]
+    fn public_ip_filter_covers_internal_and_documentation_ranges() {
+        for raw in [
+            "0.0.0.0",
+            "100.64.0.1",
+            "172.16.0.1",
+            "192.168.1.1",
+            "198.18.0.1",
+            "203.0.113.1",
+            "::",
+            "fe80::1",
+            "2001:db8::1",
+        ] {
+            assert!(
+                !is_public_ip(raw.parse().unwrap()),
+                "{raw} should be blocked"
+            );
+        }
+        assert!(is_public_ip("1.1.1.1".parse().unwrap()));
+        assert!(is_public_ip("2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn resolver_rejects_localhost() {
+        let url = parse_subtitle_url("http://localhost/sub.srt").unwrap();
+        assert!(matches!(
+            resolve_public_addrs(&url).await,
+            Err(SubtitleFetchError::BlockedAddress)
+        ));
+    }
 }
