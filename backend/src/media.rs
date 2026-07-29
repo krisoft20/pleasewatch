@@ -63,6 +63,7 @@ async fn handle_get_by_tmdb(
     } else {
         Vec::new()
     };
+    drop(db);
     let subs_processing = subs_busy_for(&state, &media.id, &episodes).await;
     Json(MediaWithEpisodes {
         media,
@@ -122,6 +123,7 @@ async fn handle_get(
         Vec::new()
     };
 
+    drop(db);
     let subs_processing = subs_busy_for(&state, &media.id, &episodes).await;
     Json(MediaWithEpisodes {
         media,

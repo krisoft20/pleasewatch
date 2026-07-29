@@ -67,10 +67,33 @@ async fn handle_register(
             .into_response();
     }
 
-    let hash = match crypto::hash_password(&body.password) {
-        Ok(h) => h,
-        Err(_) => return error_resp(StatusCode::INTERNAL_SERVER_ERROR, "hash failed"),
+    drop(db);
+
+    let password = body.password.clone();
+    let hash = match tokio::task::spawn_blocking(move || crypto::hash_password(&password)).await {
+        Ok(Ok(h)) => h,
+        Ok(Err(_)) => return error_resp(StatusCode::INTERNAL_SERVER_ERROR, "hash failed"),
+        Err(e) => {
+            eprintln!("[auth] password worker failed: {e}");
+            return error_resp(StatusCode::INTERNAL_SERVER_ERROR, "hash failed");
+        }
     };
+
+    let db = state.db.lock().await;
+    if db
+        .find_user_by_username(&body.username)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return (
+            StatusCode::CONFLICT,
+            Json(ApiError {
+                error: "username already taken".into(),
+            }),
+        )
+            .into_response();
+    }
 
     let role = match db.count_users().unwrap_or(1) {
         0 => Role::Admin,
@@ -129,7 +152,23 @@ async fn handle_login(
         }
     };
 
-    if !crypto::verify_password(&body.password, &user.password_hash) {
+    drop(db);
+
+    let password = body.password;
+    let hash = user.password_hash.clone();
+    let password_ok = match tokio::task::spawn_blocking(move || {
+        crypto::verify_password(&password, &hash)
+    })
+    .await
+    {
+        Ok(ok) => ok,
+        Err(e) => {
+            eprintln!("[auth] password worker failed: {e}");
+            return error_resp(StatusCode::INTERNAL_SERVER_ERROR, "login failed");
+        }
+    };
+
+    if !password_ok {
         eprintln!(
             "[auth] bad password for '{}' from {}",
             user.username,
@@ -143,11 +182,14 @@ async fn handle_login(
     }
 
     let token = crypto::new_session_token();
-    if db.create_session(&token, &user.id).is_err() {
-        return error_resp(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "could not create session",
-        );
+    {
+        let db = state.db.lock().await;
+        if db.create_session(&token, &user.id).is_err() {
+            return error_resp(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not create session",
+            );
+        }
     }
 
     {

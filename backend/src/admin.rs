@@ -1363,6 +1363,8 @@ async fn handle_insights(
         });
     }
 
+    drop(db);
+
     if state.tmdb_key().await.is_empty() {
         out.push(Insight {
             severity: "warning".into(),

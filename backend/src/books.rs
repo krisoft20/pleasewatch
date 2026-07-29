@@ -746,6 +746,8 @@ async fn handle_delete(
     if !auth.is_admin() && b.added_by.as_deref() != Some(auth.id.as_str()) {
         return err(StatusCode::FORBIDDEN, "not yours");
     }
+    drop(db);
+
     if let Some(path) = b.file_path.as_deref() {
         let abs = abs_path(&state.media_root, path);
         if let Err(e) = tokio::fs::remove_file(&abs).await {
@@ -754,6 +756,8 @@ async fn handle_delete(
             }
         }
     }
+
+    let db = state.db.lock().await;
     if let Err(e) = db.delete_book_by_key(&key) {
         eprintln!("[books] delete failed: {e}");
         return err(StatusCode::INTERNAL_SERVER_ERROR, "delete failed");
