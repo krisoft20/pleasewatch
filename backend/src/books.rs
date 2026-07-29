@@ -2,7 +2,7 @@ use crate::models::{ApiError, Book, BookHit, BookSource};
 use crate::{middleware::AuthUser, AppState};
 use axum::{
     body::Body,
-    extract::{Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Redirect},
     routing::{get, patch, post},
@@ -38,6 +38,7 @@ const OL_WORK_TTL: Duration = Duration::from_secs(3600);
 const OL_ENRICH_TTL: Duration = Duration::from_secs(1800);
 const AUTHOR_KEYS_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_BOOK_BYTES: usize = 80 * 1024 * 1024;
+const BOOK_UPLOAD_BODY_LIMIT: usize = MAX_BOOK_BYTES + 1024 * 1024;
 const CONVERT_TIMEOUT: Duration = Duration::from_secs(120);
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
@@ -109,7 +110,10 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
         )
         .route("/api/books/{ol_key}/sources", get(handle_sources))
         .route("/api/books/{ol_key}/fetch", post(handle_fetch))
-        .route("/api/books/{ol_key}/upload", post(handle_upload))
+        .route(
+            "/api/books/{ol_key}/upload",
+            post(handle_upload).layer(DefaultBodyLimit::max(BOOK_UPLOAD_BODY_LIMIT)),
+        )
         .route("/api/books/{ol_key}/file", get(handle_file))
         .layer(axum::middleware::from_fn_with_state(
             state,
