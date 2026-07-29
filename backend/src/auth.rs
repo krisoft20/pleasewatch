@@ -157,6 +157,7 @@ async fn handle_login(
     let cookie = Cookie::build(("token", token))
         .path("/")
         .http_only(true)
+        .secure(cookie_secure())
         .same_site(SameSite::Strict)
         .max_age(time::Duration::days(3650))
         .build();
@@ -175,6 +176,7 @@ async fn handle_logout(State(state): State<Arc<AppState>>, jar: CookieJar) -> im
     let cookie = Cookie::build(("token", ""))
         .path("/")
         .http_only(true)
+        .secure(cookie_secure())
         .max_age(time::Duration::ZERO)
         .build();
 
@@ -209,4 +211,10 @@ async fn handle_check_admin(Extension(auth): Extension<AuthUser>) -> StatusCode 
 
 fn error_resp(status: StatusCode, msg: &str) -> axum::response::Response {
     (status, Json(ApiError { error: msg.into() })).into_response()
+}
+
+fn cookie_secure() -> bool {
+    std::env::var("PUBLIC_BASE_URL")
+        .map(|url| url.trim().starts_with("https://"))
+        .unwrap_or(false)
 }

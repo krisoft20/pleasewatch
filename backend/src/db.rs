@@ -5,7 +5,7 @@ use crate::models::{
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
-const SESSION_MAX_AGE: &str = "-14 days";
+const PERMANENT_SESSIONS_MIGRATION: &str = "permanent_sessions_v1";
 
 #[derive(Default)]
 pub struct MangaEnrichment<'a> {
@@ -164,6 +164,18 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_subtitles_owner ON subtitles(owner_id);",
         )?;
+
+        if self.get_setting(PERMANENT_SESSIONS_MIGRATION)?.is_none() {
+            let n = self.conn.execute(
+                "DELETE FROM sessions
+                 WHERE created_at IS NULL OR created_at <= datetime('now', '-14 days')",
+                [],
+            )?;
+            self.set_setting(PERMANENT_SESSIONS_MIGRATION, "1")?;
+            if n > 0 {
+                println!("[db] removed {n} expired sessions before enabling permanent login");
+            }
+        }
 
         if !self.has_column("media", "is_anime")? {
             self.conn.execute(
@@ -1093,8 +1105,8 @@ impl Database {
                 "SELECT u.id, u.username, u.email, u.password_hash, u.role,
                         u.created_at, u.approved_at, u.approved_by
                  FROM sessions s JOIN users u ON u.id = s.user_id
-                 WHERE s.token = ?1 AND s.created_at > datetime('now', ?2)",
-                params![token, SESSION_MAX_AGE],
+                 WHERE s.token = ?1",
+                params![token],
                 map_user,
             )
             .optional()
@@ -1103,17 +1115,6 @@ impl Database {
     pub fn delete_session(&self, token: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM sessions WHERE token = ?1", params![token])?;
-        Ok(())
-    }
-
-    pub fn cleanup_sessions(&self) -> Result<()> {
-        let n = self.conn.execute(
-            "DELETE FROM sessions WHERE created_at < datetime('now', ?1)",
-            params![SESSION_MAX_AGE],
-        )?;
-        if n > 0 {
-            println!("[db] cleaned {n} expired sessions");
-        }
         Ok(())
     }
 
@@ -3659,6 +3660,58 @@ mod tests {
                 params![id, format!("{id}-name"), format!("{id}@example.com")],
             )
             .unwrap();
+    }
+
+    #[test]
+    fn old_session_stays_valid() {
+        let db = collection_db();
+        add_user(&db, "user-1");
+        db.conn
+            .execute(
+                "INSERT INTO sessions (token, user_id, created_at)
+                 VALUES ('old-token', 'user-1', datetime('now', '-5 years'))",
+                [],
+            )
+            .unwrap();
+
+        let user = db.find_user_by_session("old-token").unwrap().unwrap();
+        assert_eq!(user.id, "user-1");
+    }
+
+    #[test]
+    fn permanent_session_migration_drops_old_tokens_once() {
+        let db = collection_db();
+        add_user(&db, "user-1");
+        db.conn
+            .execute(
+                "DELETE FROM settings WHERE key = ?1",
+                params![PERMANENT_SESSIONS_MIGRATION],
+            )
+            .unwrap();
+        db.conn
+            .execute_batch(
+                "INSERT INTO sessions (token, user_id, created_at) VALUES
+                    ('expired-token', 'user-1', datetime('now', '-5 years')),
+                    ('current-token', 'user-1', datetime('now'));",
+            )
+            .unwrap();
+
+        db.migrate().unwrap();
+        assert!(db.find_user_by_session("expired-token").unwrap().is_none());
+        assert!(db.find_user_by_session("current-token").unwrap().is_some());
+
+        db.conn
+            .execute(
+                "INSERT INTO sessions (token, user_id, created_at)
+                 VALUES ('permanent-token', 'user-1', datetime('now', '-5 years'))",
+                [],
+            )
+            .unwrap();
+        db.migrate().unwrap();
+        assert!(db
+            .find_user_by_session("permanent-token")
+            .unwrap()
+            .is_some());
     }
 
     fn collection_auto(db: &Database, user_id: &str, kind: &str, tmdb_id: i64) -> i64 {
