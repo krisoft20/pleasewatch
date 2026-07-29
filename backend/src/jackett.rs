@@ -219,11 +219,15 @@ impl Jackett {
     }
 
     pub async fn ping(&self) -> Result<(), String> {
-        let url = format!("{}/api/v2.0/indexers", self.base);
+        let url = format!("{}/api/v2.0/indexers/all/results/torznab/api", self.base);
         let resp = match self
             .client
             .get(url)
-            .query(&[("apikey", self.api_key.as_str()), ("configured", "true")])
+            .query(&[
+                ("apikey", self.api_key.as_str()),
+                ("t", "indexers"),
+                ("configured", "true"),
+            ])
             .send()
             .await
         {
@@ -231,11 +235,18 @@ impl Jackett {
             Err(e) => return Err(e.to_string()),
         };
 
-        if resp.status().is_success() {
-            Ok(())
-        } else {
-            Err(format!("http {}", resp.status().as_u16()))
+        if !resp.status().is_success() {
+            return Err(format!("http {}", resp.status().as_u16()));
         }
+
+        let body = match resp.text().await {
+            Ok(body) => body,
+            Err(e) => return Err(e.to_string()),
+        };
+        if body.contains("<error") {
+            return Err("jackett api error".into());
+        }
+        Ok(())
     }
 
     pub async fn search(
@@ -798,8 +809,11 @@ mod tests {
     use super::*;
     use axum::{http::StatusCode, routing::get, Router};
 
-    async fn server(status: StatusCode) -> String {
-        let app = Router::new().route("/api/v2.0/indexers", get(move || async move { status }));
+    async fn server(status: StatusCode, body: &'static str) -> String {
+        let app = Router::new().route(
+            "/api/v2.0/indexers/all/results/torznab/api",
+            get(move || async move { (status, body) }),
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -809,12 +823,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ping_uses_http_status() {
-        let ok = server(StatusCode::OK).await;
+    async fn ping_checks_torznab_response() {
+        let ok = server(StatusCode::OK, "<indexers />").await;
         assert!(Jackett::new(&ok, "key").ping().await.is_ok());
 
-        let denied = server(StatusCode::UNAUTHORIZED).await;
-        let err = Jackett::new(&denied, "bad").ping().await.unwrap_err();
+        let rejected = server(
+            StatusCode::OK,
+            r#"<error code="100" description="Invalid API Key" />"#,
+        )
+        .await;
+        let err = Jackett::new(&rejected, "bad").ping().await.unwrap_err();
+        assert_eq!(err, "jackett api error");
+
+        let denied = server(StatusCode::UNAUTHORIZED, "").await;
+        let err = Jackett::new(&denied, "key").ping().await.unwrap_err();
         assert_eq!(err, "http 401");
     }
 }
