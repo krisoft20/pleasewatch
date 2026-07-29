@@ -9,7 +9,7 @@ use crate::{
 };
 use axum::{
     extract::{ConnectInfo, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
@@ -102,6 +102,7 @@ async fn handle_login(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     jar: CookieJar,
+    headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> impl IntoResponse {
     {
@@ -157,7 +158,7 @@ async fn handle_login(
     let cookie = Cookie::build(("token", token))
         .path("/")
         .http_only(true)
-        .secure(cookie_secure())
+        .secure(cookie_secure(&headers))
         .same_site(SameSite::Strict)
         .max_age(time::Duration::days(3650))
         .build();
@@ -166,7 +167,11 @@ async fn handle_login(
     (jar.add(cookie), Json(LoginResponse { user: public })).into_response()
 }
 
-async fn handle_logout(State(state): State<Arc<AppState>>, jar: CookieJar) -> impl IntoResponse {
+async fn handle_logout(
+    State(state): State<Arc<AppState>>,
+    jar: CookieJar,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if let Some(c) = jar.get("token") {
         let token = c.value().to_string();
         let db = state.db.lock().await;
@@ -176,7 +181,7 @@ async fn handle_logout(State(state): State<Arc<AppState>>, jar: CookieJar) -> im
     let cookie = Cookie::build(("token", ""))
         .path("/")
         .http_only(true)
-        .secure(cookie_secure())
+        .secure(cookie_secure(&headers))
         .max_age(time::Duration::ZERO)
         .build();
 
@@ -213,8 +218,29 @@ fn error_resp(status: StatusCode, msg: &str) -> axum::response::Response {
     (status, Json(ApiError { error: msg.into() })).into_response()
 }
 
-fn cookie_secure() -> bool {
+fn cookie_secure(headers: &HeaderMap) -> bool {
+    if headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        == Some("https")
+    {
+        return true;
+    }
+
     std::env::var("PUBLIC_BASE_URL")
         .map(|url| url.trim().starts_with("https://"))
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn secure_cookie_uses_forwarded_https() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert!(cookie_secure(&headers));
+    }
 }
