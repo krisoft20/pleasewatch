@@ -218,6 +218,26 @@ impl Jackett {
         }
     }
 
+    pub async fn ping(&self) -> Result<(), String> {
+        let url = format!("{}/api/v2.0/indexers", self.base);
+        let resp = match self
+            .client
+            .get(url)
+            .query(&[("apikey", self.api_key.as_str()), ("configured", "true")])
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("http {}", resp.status().as_u16()))
+        }
+    }
+
     pub async fn search(
         &self,
         query: &str,
@@ -770,5 +790,31 @@ pub(crate) fn parse_title_metadata(title: &str) -> TitleMeta {
         subtitle_info,
         release_group,
         tags,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{http::StatusCode, routing::get, Router};
+
+    async fn server(status: StatusCode) -> String {
+        let app = Router::new().route("/api/v2.0/indexers", get(move || async move { status }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn ping_uses_http_status() {
+        let ok = server(StatusCode::OK).await;
+        assert!(Jackett::new(&ok, "key").ping().await.is_ok());
+
+        let denied = server(StatusCode::UNAUTHORIZED).await;
+        let err = Jackett::new(&denied, "bad").ping().await.unwrap_err();
+        assert_eq!(err, "http 401");
     }
 }

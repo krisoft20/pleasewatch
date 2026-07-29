@@ -523,12 +523,13 @@ async fn handle_health(
         }),
         Some(j) => {
             let start = std::time::Instant::now();
-            let res = j.search("ping", &[], &[], None).await;
+            let res = j.ping().await;
+            let latency = start.elapsed().as_millis();
             out.push(HealthCheck {
                 name: "jackett".into(),
-                ok: !res.is_empty() || start.elapsed().as_millis() < 8000,
-                detail: None,
-                latency_ms: Some(start.elapsed().as_millis()),
+                ok: res.is_ok(),
+                detail: res.err().map(|e| short_err(&e)),
+                latency_ms: Some(latency),
             });
         }
     }
