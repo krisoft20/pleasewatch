@@ -332,6 +332,50 @@ async fn handle_episode_remove_file(
     StatusCode::NO_CONTENT.into_response()
 }
 
+fn safe_upload_filename(raw: &str) -> Option<String> {
+    let leaf = raw.rsplit(['/', '\\']).next().unwrap_or_default().trim();
+    if leaf.is_empty() || matches!(leaf, "." | "..") {
+        return None;
+    }
+
+    let mut safe = leaf
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect::<String>();
+    safe.truncate(
+        safe.char_indices()
+            .nth(240)
+            .map(|(idx, _)| idx)
+            .unwrap_or(safe.len()),
+    );
+    let trimmed_len = safe.trim_end_matches([' ', '.']).len();
+    safe.truncate(trimmed_len);
+    if safe.is_empty() || matches!(safe.as_str(), "." | "..") {
+        return None;
+    }
+
+    let stem = safe
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end()
+        .to_ascii_uppercase();
+    let numbered_device = stem.len() == 4
+        && (stem.starts_with("COM") || stem.starts_with("LPT"))
+        && matches!(stem.as_bytes()[3], b'1'..=b'9');
+    if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") || numbered_device {
+        safe.insert(0, '_');
+    }
+
+    Some(safe)
+}
+
 async fn handle_upload_local(
     Extension(auth): Extension<AuthUser>,
     State(state): State<Arc<AppState>>,
@@ -380,7 +424,7 @@ async fn handle_upload_local(
         }
         let original = field
             .file_name()
-            .map(|s| s.to_string())
+            .and_then(safe_upload_filename)
             .unwrap_or_else(|| format!("upload-{}.mkv", uuid::Uuid::new_v4()));
         let target = staging_dir.join(&original);
         let mut out = match tokio::fs::File::create(&target).await {
@@ -453,4 +497,33 @@ async fn handle_upload_local(
 
 fn err(status: StatusCode, msg: &str) -> axum::response::Response {
     (status, Json(ApiError { error: msg.into() })).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upload_filename_never_keeps_a_client_path() {
+        assert_eq!(
+            safe_upload_filename("../../manage/bin/pleasewatch"),
+            Some("pleasewatch".into())
+        );
+        assert_eq!(
+            safe_upload_filename(r"C:\manage\bin\pleasewatch.exe"),
+            Some("pleasewatch.exe".into())
+        );
+        assert_eq!(safe_upload_filename("/manage/.env"), Some(".env".into()));
+    }
+
+    #[test]
+    fn upload_filename_handles_windows_special_names() {
+        assert_eq!(
+            safe_upload_filename("movie:S01E02?.mkv"),
+            Some("movie_S01E02_.mkv".into())
+        );
+        assert_eq!(safe_upload_filename("CON.mkv"), Some("_CON.mkv".into()));
+        assert_eq!(safe_upload_filename(".."), None);
+        assert_eq!(safe_upload_filename("////"), None);
+    }
 }
