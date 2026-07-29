@@ -103,7 +103,7 @@ ssh -o ServerAliveInterval=30 "$VPS_HOST" "set -eo pipefail; cd $VPS_DIR/deploy 
         -v pw-cargo-registry:/usr/local/cargo/registry \
         -e CARGO_TARGET_DIR=/target \
         -w /src \
-        pw-rust-builder:latest cargo build --release --offline 2>&1 | tail -5 && \
+        pw-rust-builder:latest sh -c 'cargo build --release --offline || cargo build --release --locked' 2>&1 | tail -5 && \
       docker run --rm \
         -v pw-cargo-target:/target:ro \
         -v $VPS_DIR/deploy/bin:/host \
