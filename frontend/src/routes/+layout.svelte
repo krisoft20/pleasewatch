@@ -3,6 +3,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import BottomBar from '$lib/components/BottomBar.svelte';
+    import Footer from '$lib/components/Footer.svelte';
     import PwaInstallBanner from '$lib/components/PwaInstallBanner.svelte';
 
     let { children } = $props();
@@ -75,5 +76,6 @@
 </script>
 
 {@render children()}
+<Footer />
 <BottomBar />
 <PwaInstallBanner />
