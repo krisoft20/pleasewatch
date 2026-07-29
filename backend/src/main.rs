@@ -43,6 +43,7 @@ use tower_http::services::{ServeDir, ServeFile};
 pub struct AppState {
     pub db: Mutex<db::Database>,
     pub media_root: String,
+    pub trust_proxy: bool,
     pub tmdb_api_key: Mutex<String>,
     pub wyzie_api_key: Mutex<String>,
     pub omdb_api_key: Mutex<String>,
@@ -198,9 +199,14 @@ async fn main() {
         crate::pi!("[pleasewatch] OMDB_API_KEY not set, anime season detection disabled. claim free at https://www.omdbapi.com/apikey.aspx");
     }
 
+    let trust_proxy = std::env::var("TRUST_PROXY")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
     let state = Arc::new(AppState {
         db: Mutex::new(database),
         media_root,
+        trust_proxy,
         tmdb_api_key: Mutex::new(tmdb_api_key),
         wyzie_api_key: Mutex::new(wyzie_api_key),
         omdb_api_key: Mutex::new(omdb_api_key),

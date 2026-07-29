@@ -97,6 +97,7 @@ services:
     environment:
       - DATABASE_PATH=/opt/pleasewatch/data/pleasewatch.db
       - MEDIA_ROOT=/media
+      - TRUST_PROXY=true
       - TMDB_API_KEY=${TMDB_API_KEY}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
       - JACKETT_URL=http://jackett:9117

@@ -15,7 +15,7 @@ use axum::{
     Extension, Json, Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -128,9 +128,11 @@ async fn handle_login(
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> impl IntoResponse {
+    let ip = client_ip(&headers, addr.ip(), state.trust_proxy);
+
     {
         let mut limiter = state.login_limiter.lock().await;
-        if !limiter.check(addr.ip()) {
+        if !limiter.check(ip) {
             return error_resp(
                 StatusCode::TOO_MANY_REQUESTS,
                 "too many attempts, try again later",
@@ -143,11 +145,7 @@ async fn handle_login(
     let user = match db.find_user_by_username(&body.username).ok().flatten() {
         Some(u) => u,
         None => {
-            eprintln!(
-                "[auth] login miss for '{}' from {}",
-                body.username,
-                addr.ip()
-            );
+            eprintln!("[auth] login miss for '{}' from {}", body.username, ip);
             return error_resp(StatusCode::UNAUTHORIZED, "invalid credentials");
         }
     };
@@ -169,11 +167,7 @@ async fn handle_login(
     };
 
     if !password_ok {
-        eprintln!(
-            "[auth] bad password for '{}' from {}",
-            user.username,
-            addr.ip()
-        );
+        eprintln!("[auth] bad password for '{}' from {}", user.username, ip);
         return error_resp(StatusCode::UNAUTHORIZED, "invalid credentials");
     }
 
@@ -194,7 +188,7 @@ async fn handle_login(
 
     {
         let mut limiter = state.login_limiter.lock().await;
-        limiter.reset(addr.ip());
+        limiter.reset(ip);
     }
 
     let cookie = Cookie::build(("token", token))
@@ -260,6 +254,19 @@ fn error_resp(status: StatusCode, msg: &str) -> axum::response::Response {
     (status, Json(ApiError { error: msg.into() })).into_response()
 }
 
+fn client_ip(headers: &HeaderMap, peer: IpAddr, trust_proxy: bool) -> IpAddr {
+    if !trust_proxy {
+        return peer;
+    }
+
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(peer)
+}
+
 fn cookie_secure(headers: &HeaderMap) -> bool {
     if headers
         .get("x-forwarded-proto")
@@ -284,5 +291,28 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
         assert!(cookie_secure(&headers));
+    }
+
+    #[test]
+    fn forwarded_ip_needs_trusted_proxy() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("203.0.113.8, 172.18.0.3"),
+        );
+        let peer = "172.18.0.4".parse().unwrap();
+        let forwarded: IpAddr = "203.0.113.8".parse().unwrap();
+
+        assert_eq!(client_ip(&headers, peer, true), forwarded);
+        assert_eq!(client_ip(&headers, peer, false), peer);
+    }
+
+    #[test]
+    fn invalid_forwarded_ip_uses_peer() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", HeaderValue::from_static("not-an-ip"));
+        let peer = "172.18.0.4".parse().unwrap();
+
+        assert_eq!(client_ip(&headers, peer, true), peer);
     }
 }
