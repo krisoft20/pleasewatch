@@ -1,0 +1,82 @@
+# Rust
+/backend/target/
+**/*.rs.bk
+
+# Node / Svelte
+/frontend/node_modules/
+/frontend/.svelte-kit/
+/frontend/build/
+/frontend/dist/
+
+# Database
+/backend/data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+
+# Environment / secrets
+.env
+.env.local
+.env.*
+!.env.example
+.envrc
+.npmrc
+.netrc
+**/.cargo/credentials
+**/.cargo/credentials.toml
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+/.secrets/
+/secrets/
+
+# Deploy live state
+/deploy/.env
+/deploy/pw-data/
+/deploy/media/
+/deploy/qbit-config/
+/deploy/jackett-config/
+/deploy/prowlarr-config/
+/deploy/gluetun-config/
+/deploy/caddy-data/
+/deploy/caddy-config/
+/deploy/docker-compose.override.yml
+
+# Tarballs from deploy.sh
+pleasewatch*.tar.gz
+
+# local deploy state/config
+/.deploy-hashes/
+/.deploy.env
+/.deploy.env.local
+/frontend/build/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+/.agents/
+/.codex/
+*.swp
+*~
+
+# Logs
+*.log

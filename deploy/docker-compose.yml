@@ -1,0 +1,131 @@
+name: ${PW_PROJECT:-pleasewatch}
+
+networks:
+  pwnet:
+    driver: bridge
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks: [pwnet]
+    ports:
+      - "${QBIT_BIND:-127.0.0.1:8080}:8080"
+    volumes:
+      - ./gluetun-config:/gluetun
+    environment:
+      - VPN_SERVICE_PROVIDER=${VPN_PROVIDER}
+      - VPN_TYPE=${VPN_TYPE:-wireguard}
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY:-}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES:-}
+      - SERVER_COUNTRIES=${VPN_COUNTRIES:-}
+      - OPENVPN_USER=${OPENVPN_USER:-}
+      - OPENVPN_PASSWORD=${OPENVPN_PASSWORD:-}
+      - TZ=${TZ:-UTC}
+      - HTTPPROXY=on
+      - HTTPPROXY_LOG=on
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "https://ipinfo.io/ip"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+      - WEBUI_PORT=8080
+    volumes:
+      - ./qbit-config:/config
+      - ${PW_MEDIA_DIR:-./media}:/media
+    restart: unless-stopped
+
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    networks: [pwnet]
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./jackett-config:/config
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    networks: [pwnet]
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./prowlarr-config:/config
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    networks: [pwnet]
+    environment:
+      - LOG_LEVEL=info
+      - TZ=${TZ:-UTC}
+    restart: unless-stopped
+
+  pleasewatch:
+    image: ${PW_RUNTIME_IMAGE:-pleasewatch-runtime:latest}
+    networks: [pwnet]
+    depends_on:
+      - jackett
+      - prowlarr
+      - qbittorrent
+    volumes:
+      - ./pw-data:/opt/pleasewatch/data
+      - ${PW_MEDIA_DIR:-./media}:/media
+      - ./:/manage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./bin/pleasewatch:/usr/local/bin/pleasewatch:ro
+      - ./static:/opt/pleasewatch/static:ro
+    environment:
+      - DATABASE_PATH=/opt/pleasewatch/data/pleasewatch.db
+      - MEDIA_ROOT=/media
+      - JWT_SECRET=${JWT_SECRET}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      - JACKETT_URL=http://jackett:9117
+      - JACKETT_API_KEY=${JACKETT_API_KEY:-}
+      - JACKETT_INDEXERS_MOVIE=${JACKETT_INDEXERS_MOVIE:-}
+      - JACKETT_INDEXERS_TV=${JACKETT_INDEXERS_TV:-}
+      - JACKETT_INDEXERS_ANIME=${JACKETT_INDEXERS_ANIME:-}
+      - JACKETT_INDEXERS_BOOK=${JACKETT_INDEXERS_BOOK:-}
+      - PROWLARR_URL=http://prowlarr:9696
+      - PROWLARR_API_KEY=${PROWLARR_API_KEY:-}
+      - QBIT_URL=http://gluetun:8080
+      - QBIT_USER=${QBIT_USER:-admin}
+      - QBIT_PASS=${QBIT_PASS:-}
+      - MANGA_CK_PROXY=http://gluetun:8888
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    networks: [pwnet]
+    depends_on: [pleasewatch]
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+      - "${JACKETT_PORT:-9117}:9117"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+    environment:
+      - PW_HOSTNAME=${PW_HOSTNAME:-:80}
+    restart: unless-stopped
