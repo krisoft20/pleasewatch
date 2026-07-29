@@ -110,7 +110,8 @@ fn rotate_omdb(keys: Vec<String>) -> Vec<String> {
 
 #[tokio::main]
 async fn main() {
-    let database = db::Database::open("data/pleasewatch.db").expect("failed to open database");
+    let db_path = std::env::var("DATABASE_PATH").unwrap_or("data/pleasewatch.db".into());
+    let database = db::Database::open(db_path).expect("failed to open database");
     database.migrate().expect("failed to run migrations");
 
     let media_root = std::env::var("MEDIA_ROOT").unwrap_or_else(|_| "media".to_string());

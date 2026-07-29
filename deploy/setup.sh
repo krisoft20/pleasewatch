@@ -91,11 +91,6 @@ for key in PW_HOSTNAME PUBLIC_BASE_URL CADDY_HTTP_PORT CADDY_HTTPS_PORT QBIT_BIN
     fi
 done
 
-if grep -q '^JWT_SECRET=change-me' .env || ! grep -q '^JWT_SECRET=' .env; then
-    jwt=$(openssl rand -hex 32)
-    set_env "JWT_SECRET" "$jwt"
-fi
-
 if ! grep -q '^QBIT_PASS=..' .env; then
     qbpass=$(openssl rand -base64 18 | tr -d '/=+' | head -c 24)
     set_env "QBIT_PASS" "$qbpass"
