@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { api, type BookShelfItem, type User } from '$lib/api';
+    import { bookCoverNeedsRefresh, bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t, i18n } from '$lib/i18n.svelte';
     import BookShelf from './BookShelf.svelte';
     import BookGreeting from './BookGreeting.svelte';
@@ -32,7 +33,7 @@
                 readTotal = s.read_total;
                 readYear = s.read_year;
                 goal = s.goal;
-                if (s.items.some((book) => !book.cover_url)) {
+                if (s.items.some((book) => bookCoverNeedsRefresh(book.cover_url))) {
                     // The shelf request starts server-side cover recovery. Re-read it once the
                     // replacement cover IDs have had a moment to come back from Open Library.
                     coverRefreshTimer = setTimeout(() => {
@@ -252,7 +253,13 @@
                         <div class="pw-mb-gitem">
                             <a href={`/book/${s.ol_key}`}>
                                 <span class="pw-mb-gcover">
-                                    {#if s.cover_url}<img src={s.cover_url} alt={s.title} loading="lazy" />{/if}
+                                    {#if s.cover_url}<img
+                                            src={bookCoverSrc(s.cover_url)}
+                                            alt={s.title}
+                                            loading="lazy"
+                                            onload={(event) => validateBookCover(event, s.cover_url!)}
+                                            onerror={(event) => retryBookCover(event, s.cover_url!)}
+                                        />{/if}
                                     {@render plat()}
                                 </span>
                                 <span class="pw-mb-gtitle">{s.title}</span>

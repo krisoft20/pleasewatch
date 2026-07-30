@@ -23,7 +23,7 @@
         try {
             const r = await api.register(u, e, p);
             if (r.role === 'admin') {
-                goto('/login');
+                goto('/login', { replaceState: true });
                 return;
             }
             ok = { username: u, email: e };

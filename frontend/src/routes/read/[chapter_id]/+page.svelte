@@ -257,22 +257,27 @@
         }
         const pi = prevIdx();
         if (pi >= 0) idx = pi;
-        else if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`);
+        else if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`, { replaceState: true });
     }
 
     function toNextChapter() {
-        if (nextCh) goto(`/read/${nextCh.id}?md=${mdId}`);
+        if (nextCh) goto(`/read/${nextCh.id}?md=${mdId}`, { replaceState: true });
         else exit();
     }
 
     function toPrevChapter() {
-        if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`);
+        if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`, { replaceState: true });
         else exit();
     }
 
     function exit() {
-        if (mdId) goto(`/manga/${mdId}`);
-        else history.back();
+        if (mdId) {
+            goto(`/manga/${mdId}`, { replaceState: true });
+        } else if (history.length > 1) {
+            history.back();
+        } else {
+            goto('/', { replaceState: true });
+        }
     }
 
     function toggleFs() {
@@ -544,7 +549,10 @@
         {#if !endOverlay && mode !== 'webtoon'}
             <div class="pw-reader-bottom" role="presentation" onclick={(e) => e.stopPropagation()}>
                 {#if prevCh}
-                    <button class="pw-reader-ch" onclick={() => goto(`/read/${prevCh.id}?md=${mdId}`)}>
+                    <button
+                        class="pw-reader-ch"
+                        onclick={() => goto(`/read/${prevCh.id}?md=${mdId}`, { replaceState: true })}
+                    >
                         <svg
                             width="15"
                             height="15"
@@ -561,7 +569,10 @@
                     <span></span>
                 {/if}
                 {#if nextCh}
-                    <button class="pw-reader-ch" onclick={() => goto(`/read/${nextCh.id}?md=${mdId}`)}>
+                    <button
+                        class="pw-reader-ch"
+                        onclick={() => goto(`/read/${nextCh.id}?md=${mdId}`, { replaceState: true })}
+                    >
                         ch. {nextCh.chapter ?? '?'}
                         <svg
                             width="15"

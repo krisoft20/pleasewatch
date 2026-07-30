@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { api, type DailyQuote } from '$lib/api';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t } from '$lib/i18n.svelte';
 
     let quote = $state<DailyQuote | null>(null);
@@ -28,7 +29,14 @@
         <blockquote class="pw-dq-text">{quote.snippet}</blockquote>
         <div class="pw-dq-foot">
             {#if quote.cover_url}
-                <img class="pw-dq-cover" src={quote.cover_url} alt="" loading="lazy" />
+                <img
+                    class="pw-dq-cover"
+                    src={bookCoverSrc(quote.cover_url)}
+                    alt=""
+                    loading="lazy"
+                    onload={(event) => validateBookCover(event, quote!.cover_url!)}
+                    onerror={(event) => retryBookCover(event, quote!.cover_url!)}
+                />
             {/if}
             <div class="pw-dq-meta">
                 <span class="pw-dq-title">{quote.title}</span>

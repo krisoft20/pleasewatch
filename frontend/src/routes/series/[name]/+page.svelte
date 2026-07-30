@@ -3,6 +3,7 @@
     import { goto } from '$app/navigation';
     import { page } from '$app/state';
     import { api, type SeriesDetail, type User } from '$lib/api';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t } from '$lib/i18n.svelte';
     import TopBar from '$lib/components/TopBar.svelte';
 
@@ -17,7 +18,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         try {
@@ -96,7 +97,14 @@
                             <div class="pw-sr-card-cover">
                                 <span class="pw-sr-card-num">#{i + 1}</span>
                                 {#if b.cover_url}
-                                    <img src={b.cover_url} alt={b.title} loading="lazy" decoding="async" />
+                                    <img
+                                        src={bookCoverSrc(b.cover_url)}
+                                        alt={b.title}
+                                        loading="lazy"
+                                        decoding="async"
+                                        onload={(event) => validateBookCover(event, b.cover_url!)}
+                                        onerror={(event) => retryBookCover(event, b.cover_url!)}
+                                    />
                                 {:else}
                                     <div class="pw-sr-card-empty">
                                         <svg

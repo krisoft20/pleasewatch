@@ -95,7 +95,7 @@
     onMount(async () => {
         const [u, m] = await Promise.all([api.me().catch(() => null), api.getMedia(id).catch(() => null)]);
         if (!u) {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         user = u;
@@ -146,10 +146,12 @@
 
     function back() {
         if (!media?.tmdb_id) {
-            goto('/');
+            goto('/', { replaceState: true });
             return;
         }
-        goto(media.media_type === 'tv' ? `/tv/${media.tmdb_id}` : `/movie/${media.tmdb_id}`);
+        goto(media.media_type === 'tv' ? `/tv/${media.tmdb_id}` : `/movie/${media.tmdb_id}`, {
+            replaceState: true
+        });
     }
 
     async function pickEpisode(ep: Episode) {

@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { api, type AuthorDetail } from '$lib/api';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t, i18n } from '$lib/i18n.svelte';
 
     let { olid, onClose }: { olid: string; onClose: () => void } = $props();
@@ -143,7 +144,13 @@
                         <button class="pw-am-work" type="button" onclick={() => openWork(w.ol_key)} title={w.title}>
                             <div class="pw-am-work-poster">
                                 {#if w.cover_url}
-                                    <img src={w.cover_url} alt="" loading="lazy" />
+                                    <img
+                                        src={bookCoverSrc(w.cover_url)}
+                                        alt=""
+                                        loading="lazy"
+                                        onload={(event) => validateBookCover(event, w.cover_url!)}
+                                        onerror={(event) => retryBookCover(event, w.cover_url!)}
+                                    />
                                 {:else}
                                     <div class="pw-am-work-blank"></div>
                                 {/if}

@@ -43,7 +43,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         const d = await detailP;
@@ -186,13 +186,13 @@
     }
 
     function read(ch: MangaChapter, pageNum = 0) {
-        goto(`/read/${ch.id}?md=${mdId}${pageNum > 0 ? `&page=${pageNum}` : ''}`);
+        goto(`/read/${ch.id}?md=${mdId}${pageNum > 0 ? `&page=${pageNum}` : ''}`, { replaceState: true });
     }
 
     function continueReading() {
         const p = detail?.progress;
         if (!p) return;
-        goto(`/read/${p.chapter_id}?md=${mdId}&page=${p.page}`);
+        goto(`/read/${p.chapter_id}?md=${mdId}&page=${p.page}`, { replaceState: true });
     }
 
     const title = $derived(detail?.manga.title ?? 'manga');

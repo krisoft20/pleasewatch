@@ -56,11 +56,11 @@
         try {
             me = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         if (me.role !== 'admin') {
-            goto('/');
+            goto('/', { replaceState: true });
             return;
         }
         const requested = new URLSearchParams(window.location.search).get('tab') as Tab | null;

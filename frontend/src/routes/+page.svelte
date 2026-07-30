@@ -48,6 +48,7 @@
     const tab = $derived(page.url.searchParams.get('tab') ?? 'library');
 
     function setTab(k: string) {
+        if (k === tab) return;
         const url = new URL(window.location.href);
         if (k === 'library') url.searchParams.delete('tab');
         else url.searchParams.set('tab', k);
@@ -234,14 +235,14 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         if (user.role === 'admin') {
             try {
                 const s = await api.getSettings();
                 if (!s.tmdb_ready) {
-                    goto('/onboarding');
+                    goto('/onboarding', { replaceState: true });
                     return;
                 }
             } catch {}

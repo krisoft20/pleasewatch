@@ -159,7 +159,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         connectWs();
@@ -1174,12 +1174,13 @@
                                             class:is-ready={isReady}
                                             class:is-watched={isWatched}
                                             onclick={() => {
-                                                if (isReady && stored) goto(`/watch/${media!.id}?ep=${stored.id}`);
+                                                if (isReady && stored)
+                                                    goto(`/watch/${media!.id}?ep=${stored.id}`, { replaceState: true });
                                             }}
                                             onkeydown={(e) => {
                                                 if ((e.key === 'Enter' || e.key === ' ') && isReady && stored) {
                                                     e.preventDefault();
-                                                    goto(`/watch/${media!.id}?ep=${stored.id}`);
+                                                    goto(`/watch/${media!.id}?ep=${stored.id}`, { replaceState: true });
                                                 }
                                             }}
                                             role="button"
@@ -1382,12 +1383,13 @@
                                             class="pw-ep-card is-ready"
                                             class:is-watched={isWatched}
                                             onclick={() => {
-                                                if (media) goto(`/watch/${media.id}?ep=${ep.id}`);
+                                                if (media)
+                                                    goto(`/watch/${media.id}?ep=${ep.id}`, { replaceState: true });
                                             }}
                                             onkeydown={(e) => {
                                                 if ((e.key === 'Enter' || e.key === ' ') && media) {
                                                     e.preventDefault();
-                                                    goto(`/watch/${media.id}?ep=${ep.id}`);
+                                                    goto(`/watch/${media.id}?ep=${ep.id}`, { replaceState: true });
                                                 }
                                             }}
                                             role="button"

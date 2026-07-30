@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { BookShelfItem } from '$lib/api';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t, i18n } from '$lib/i18n.svelte';
 
     let { items, year, onClose }: { items: BookShelfItem[]; year: number; onClose: () => void } = $props();
@@ -118,7 +119,13 @@
                         href={`/book/${s.ol_key}`}
                         style:animation-delay="{Math.min(i * 35, 1400)}ms"
                     >
-                        {#if s.cover_url}<img src={s.cover_url} alt={s.title} loading="lazy" />{/if}
+                        {#if s.cover_url}<img
+                                src={bookCoverSrc(s.cover_url)}
+                                alt={s.title}
+                                loading="lazy"
+                                onload={(event) => validateBookCover(event, s.cover_url!)}
+                                onerror={(event) => retryBookCover(event, s.cover_url!)}
+                            />{/if}
                     </a>
                 {/each}
             </div>

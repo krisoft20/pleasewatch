@@ -368,12 +368,18 @@ async fn mark_in_library(state: &Arc<AppState>, hits: &mut [BookHit]) {
     let keys: Vec<String> = hits.iter().map(|h| h.ol_key.clone()).collect();
     let owned = {
         let db = state.db.lock().await;
-        db.list_book_keys_owned(&keys).unwrap_or_default()
+        db.list_book_states_owned(&keys).unwrap_or_default()
     };
     for h in hits.iter_mut() {
-        if let Some(has_file) = owned.get(&h.ol_key) {
+        if let Some((has_file, cover_url)) = owned.get(&h.ol_key) {
             h.in_library = true;
             h.ready = *has_file;
+            if cover_url
+                .as_deref()
+                .is_some_and(|url| !url.trim().is_empty())
+            {
+                h.cover_url.clone_from(cover_url);
+            }
         }
     }
 }
@@ -531,7 +537,7 @@ async fn find_or_create_book(
         }
     }
 
-    let hit = match ol_work_cached(key).await {
+    let mut hit = match ol_work_cached(key).await {
         Ok(Some(h)) => h,
         Ok(None) => return Err(err(StatusCode::NOT_FOUND, "book not on openlibrary")),
         Err(e) => {
@@ -539,6 +545,11 @@ async fn find_or_create_book(
             return Err(err(StatusCode::BAD_GATEWAY, "openlibrary unavailable"));
         }
     };
+    if let Ok(editions) = ol_editions_cached(key).await {
+        if let Some(cover_id) = editions.cover_id {
+            hit.cover_url = Some(format!("/api/books/cover/{cover_id}.jpg"));
+        }
+    }
     let author_keys = hit.author_keys.clone();
 
     let book = Book {
@@ -629,6 +640,9 @@ async fn handle_detail(
         if book.enriched_at.is_none() || book.description.as_deref().is_none_or(str::is_empty) {
             spawn_enrich(&state, &key);
         }
+        if book_cover_needs_refresh(book.cover_url.as_deref()) {
+            spawn_cover_refresh(&state, &key);
+        }
         let file_size = match book.file_path.as_deref() {
             Some(rel) => tokio::fs::metadata(abs_path(&state.media_root, rel))
                 .await
@@ -703,7 +717,10 @@ async fn handle_detail(
         title: hit.title,
         authors: hit.authors,
         description: hit.description,
-        cover_url: hit.cover_url,
+        cover_url: eds
+            .cover_id
+            .map(|id| format!("/api/books/cover/{id}.jpg"))
+            .or(hit.cover_url),
         year: hit.year.or(eds.year),
         language: hit.language.or(eds.language),
         file_path: None,
@@ -1571,7 +1588,7 @@ async fn handle_cover(Path(cover_id): Path<String>) -> impl IntoResponse {
     if !id.chars().all(|c| c.is_ascii_digit()) {
         return err(StatusCode::BAD_REQUEST, "bad cover id");
     }
-    let url = format!("{OL_COVERS}/b/id/{id}-L.jpg");
+    let url = format!("{OL_COVERS}/b/id/{id}-L.jpg?default=false");
     proxy_image(&url, "image/jpeg").await
 }
 
@@ -1709,8 +1726,11 @@ async fn handle_shelf(
     let goal = db.get_book_goal(&auth.id).unwrap_or(None);
     drop(db);
 
-    for item in items.iter().filter(|item| item.cover_url.is_none()) {
-        spawn_missing_cover_recovery(&state, &item.ol_key);
+    for item in items
+        .iter()
+        .filter(|item| book_cover_needs_refresh(item.cover_url.as_deref()))
+    {
+        spawn_cover_refresh(&state, &item.ol_key);
     }
     Json(serde_json::json!({
         "items": items,
@@ -2004,7 +2024,7 @@ fn cover_recovery_claims() -> &'static Mutex<HashMap<String, Instant>> {
     COVER_RECOVERING.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn spawn_missing_cover_recovery(state: &Arc<AppState>, ol_key: &str) {
+fn spawn_cover_refresh(state: &Arc<AppState>, ol_key: &str) {
     {
         let mut claims = cover_recovery_claims().lock().unwrap();
         if claims
@@ -2015,35 +2035,42 @@ fn spawn_missing_cover_recovery(state: &Arc<AppState>, ol_key: &str) {
         }
         claims.insert(ol_key.to_string(), Instant::now());
     }
-    tokio::spawn(recover_missing_cover(state.clone(), ol_key.to_string()));
+    tokio::spawn(refresh_book_cover(state.clone(), ol_key.to_string()));
 }
 
-async fn recover_missing_cover(state: Arc<AppState>, ol_key: String) {
-    let mut cover_url = match ol_work_cached(&ol_key).await {
-        Ok(Some(hit)) => hit.cover_url,
-        Ok(None) => None,
-        Err(e) => {
-            eprintln!("[books] cover refresh failed for {ol_key}: {e}");
-            None
-        }
+async fn refresh_book_cover(state: Arc<AppState>, ol_key: String) {
+    let edition_cover = ol_editions_cached(&ol_key)
+        .await
+        .ok()
+        .and_then(|edition| edition.cover_id)
+        .map(|id| format!("/api/books/cover/{id}.jpg"));
+    let cover_url = match edition_cover {
+        Some(url) => Some(url),
+        None => match ol_work_cached(&ol_key).await {
+            Ok(Some(hit)) => hit.cover_url,
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("[books] cover refresh failed for {ol_key}: {e}");
+                None
+            }
+        },
     };
-    if cover_url.is_none() {
-        cover_url = ol_editions_cached(&ol_key)
-            .await
-            .ok()
-            .and_then(|edition| edition.cover_id)
-            .map(|id| format!("/api/books/cover/{id}"));
-    }
 
     if let Some(cover_url) = cover_url {
         let db = state.db.lock().await;
-        match db.fill_missing_book_cover(&ol_key, &cover_url) {
-            Ok(true) => println!("[books] recovered cover for {ol_key}"),
+        match db.update_book_cover(&ol_key, &cover_url) {
+            Ok(true) => println!("[books] refreshed cover for {ol_key}"),
             Ok(false) => {}
             Err(e) => eprintln!("[books] cover save failed for {ol_key}: {e}"),
         }
     }
     cover_recovery_claims().lock().unwrap().remove(&ol_key);
+}
+
+fn book_cover_needs_refresh(cover_url: Option<&str>) -> bool {
+    cover_url.is_none_or(|url| {
+        url.trim().is_empty() || url.contains("/api/books/cover/") && !url.contains(".jpg")
+    })
 }
 
 async fn enrich_book(state: Arc<AppState>, ol_key: String) {
@@ -2299,12 +2326,9 @@ async fn ol_editions(key: &str) -> reqwest::Result<EditionBits> {
         language: None,
         year: None,
     };
-    for e in v["entries"].as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
-        // A cover can still be the best artwork for a work even when the edition
-        // itself is unsuitable for reading metadata (for example, an audiobook).
-        if out.cover_id.is_none() {
-            out.cover_id = e["covers"][0].as_i64().filter(|id| *id > 0);
-        }
+    let entries = v["entries"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+    out.cover_id = best_edition_cover(entries);
+    for e in entries {
         if is_audio_edition(e) {
             continue;
         }
@@ -2349,6 +2373,52 @@ async fn ol_editions(key: &str) -> reqwest::Result<EditionBits> {
         }
     }
     Ok(out)
+}
+
+fn best_edition_cover(entries: &[serde_json::Value]) -> Option<i64> {
+    entries
+        .iter()
+        .filter_map(|edition| {
+            newest_edition_cover(edition).map(|id| (edition_cover_rank(edition), id))
+        })
+        .max()
+        .map(|(_, id)| id)
+}
+
+fn newest_edition_cover(e: &serde_json::Value) -> Option<i64> {
+    e["covers"]
+        .as_array()?
+        .iter()
+        .filter_map(serde_json::Value::as_i64)
+        .filter(|id| *id > 0)
+        .max()
+}
+
+fn edition_cover_rank(e: &serde_json::Value) -> u8 {
+    if is_audio_edition(e) {
+        return 0;
+    }
+    let fmt = e["physical_format"]
+        .as_str()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if [
+        "hardcover",
+        "hardback",
+        "paperback",
+        "softcover",
+        "mass market",
+    ]
+    .iter()
+    .any(|kind| fmt.contains(kind))
+        || e["number_of_pages"].as_i64().is_some()
+    {
+        return 3;
+    }
+    if fmt.contains("ebook") || fmt.contains("e-book") || fmt.contains("kindle") {
+        return 1;
+    }
+    2
 }
 
 fn is_audio_edition(e: &serde_json::Value) -> bool {
@@ -2569,7 +2639,7 @@ async fn ol_work(ol_key: &str) -> reqwest::Result<Option<BookHit>> {
         cover_url: w
             .covers
             .and_then(|c| c.into_iter().next())
-            .map(|id| format!("/api/books/cover/{id}")),
+            .map(|id| format!("/api/books/cover/{id}.jpg")),
         year: w.first_publish_date.as_deref().and_then(parse_year),
         language: None,
         author_keys: Vec::new(),
@@ -2672,7 +2742,7 @@ async fn ol_author_works(olid: &str) -> reqwest::Result<Vec<BookHit>> {
         let cover_url = e["covers"][0]
             .as_i64()
             .filter(|id| *id > 0)
-            .map(|id| format!("/api/books/cover/{id}"));
+            .map(|id| format!("/api/books/cover/{id}.jpg"));
         let year = e["first_publish_date"].as_str().and_then(parse_year);
         out.push(BookHit {
             ol_key: key,
@@ -2698,7 +2768,7 @@ async fn ol_author_works(olid: &str) -> reqwest::Result<Vec<BookHit>> {
 
 fn map_ol_doc(d: &OlDoc) -> BookHit {
     let authors = d.author_name.as_ref().map(|v| v.join(", "));
-    let cover_url = d.cover_i.map(|id| format!("/api/books/cover/{id}"));
+    let cover_url = d.cover_i.map(|id| format!("/api/books/cover/{id}.jpg"));
     let language = d.language.as_ref().and_then(|v| v.first().cloned());
     BookHit {
         ol_key: normalize_key(&d.key),
@@ -3356,4 +3426,45 @@ struct OlAuthorFull {
 
 fn err(status: StatusCode, msg: &str) -> axum::response::Response {
     (status, Json(ApiError { error: msg.into() })).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn print_edition_cover_wins_over_audio_and_ebook() {
+        let editions = serde_json::json!([
+            {
+                "covers": [15156250],
+                "physical_format": "eAudiobook",
+                "publishers": ["Recorded Books"]
+            },
+            {
+                "covers": [14324535, -1],
+                "physical_format": "ebook",
+                "publishers": ["Tor"]
+            },
+            {
+                "covers": [14538949, 13127133],
+                "physical_format": "hardcover",
+                "publishers": ["Tordotcom"],
+                "number_of_pages": 245
+            }
+        ]);
+
+        assert_eq!(
+            best_edition_cover(editions.as_array().unwrap()),
+            Some(14538949)
+        );
+    }
+
+    #[test]
+    fn legacy_book_cover_is_refreshed_once() {
+        assert!(book_cover_needs_refresh(Some("")));
+        assert!(book_cover_needs_refresh(Some("/api/books/cover/13127133")));
+        assert!(!book_cover_needs_refresh(Some(
+            "/api/books/cover/14538949.jpg"
+        )));
+    }
 }

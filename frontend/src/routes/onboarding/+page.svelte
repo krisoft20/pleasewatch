@@ -49,18 +49,23 @@
     let serviceRows = $derived([
         { name: 'qBittorrent', ok: qbitOk, state: qbitOk ? 'connected' : 'optional', detail: 'download client' },
         { name: 'Jackett', ok: jackettOk, state: jackettOk ? 'connected' : 'optional', detail: 'indexer bridge' },
-        { name: 'Prowlarr', ok: prowlarrOk, state: prowlarrOk ? 'connected' : 'optional', detail: 'second indexer bridge' }
+        {
+            name: 'Prowlarr',
+            ok: prowlarrOk,
+            state: prowlarrOk ? 'connected' : 'optional',
+            detail: 'second indexer bridge'
+        }
     ]);
 
     onMount(async () => {
         try {
             me = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         if (me.role !== 'admin') {
-            goto('/');
+            goto('/', { replaceState: true });
             return;
         }
         await refreshSetup();
@@ -159,11 +164,11 @@
     }
 
     function finish() {
-        goto('/');
+        goto('/', { replaceState: true });
     }
 
     function adminSettings() {
-        goto('/admin?tab=settings');
+        goto('/admin?tab=settings', { replaceState: true });
     }
 </script>
 
@@ -311,7 +316,8 @@
                     <div class="pw-page-head">
                         <p>services</p>
                         <h1>downloads are optional.</h1>
-                        <span>docker can start the containers before the app has working credentials and api keys.</span>
+                        <span>docker can start the containers before the app has working credentials and api keys.</span
+                        >
                     </div>
 
                     <div class="pw-list">
@@ -328,7 +334,8 @@
                     </div>
 
                     <div class="pw-note">
-                        use admin settings for qbit credentials, indexer keys, and default indexers. a catalog-only server can leave this alone.
+                        use admin settings for qbit credentials, indexer keys, and default indexers. a catalog-only
+                        server can leave this alone.
                     </div>
 
                     <div class="pw-actions">
@@ -389,7 +396,11 @@ Address = 10.x.x.x/32"
                     <div class="pw-page-head">
                         <p>ready</p>
                         <h1>{tmdbOk ? 'setup is done.' : 'tmdb is still missing.'}</h1>
-                        <span>{tmdbOk ? 'open the app, add media, or tune services later.' : 'add tmdb before search.'}</span>
+                        <span
+                            >{tmdbOk
+                                ? 'open the app, add media, or tune services later.'
+                                : 'add tmdb before search.'}</span
+                        >
                     </div>
 
                     <div class="pw-grid">

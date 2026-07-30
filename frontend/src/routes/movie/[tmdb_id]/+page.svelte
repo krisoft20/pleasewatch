@@ -57,7 +57,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         connectWs();
@@ -479,7 +479,10 @@
 
                                 <div class="pw-dt-actions">
                                     {#if inLibrary && media?.file_path}
-                                        <button class="pw-v1-btn-watch" onclick={() => goto(`/watch/${media!.id}`)}>
+                                        <button
+                                            class="pw-v1-btn-watch"
+                                            onclick={() => goto(`/watch/${media!.id}`, { replaceState: true })}
+                                        >
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"
                                                 ><path d="M8 5v14l11-7z" /></svg
                                             >

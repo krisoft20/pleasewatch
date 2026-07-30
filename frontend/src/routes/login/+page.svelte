@@ -18,7 +18,7 @@
         busy = true;
         try {
             await api.login(u, p);
-            goto('/');
+            goto('/', { replaceState: true });
         } catch (caught) {
             err = caught instanceof Error ? caught.message : 'login failed';
         } finally {

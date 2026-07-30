@@ -3,6 +3,7 @@
     import { goto, preloadData } from '$app/navigation';
     import { page } from '$app/state';
     import { api, type BookHit, type MangaHit, type TmdbSearchItem, type User } from '$lib/api';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t } from '$lib/i18n.svelte';
     import { category, CATEGORIES, type Category } from '$lib/category.svelte';
     import { clickOutside } from '$lib/dismiss';
@@ -225,11 +226,24 @@
                             {#if r.kind === 'series' && r.series_covers && r.series_covers.length > 0}
                                 <div class="pw-search-poster pw-search-stack">
                                     {#each r.series_covers.slice(0, 3) as c, i (i)}
-                                        <img src={c} alt="" loading="lazy" />
+                                        <img
+                                            src={bookCoverSrc(c)}
+                                            alt=""
+                                            loading="lazy"
+                                            onload={(event) => validateBookCover(event, c)}
+                                            onerror={(event) => retryBookCover(event, c)}
+                                        />
                                     {/each}
                                 </div>
                             {:else if r.cover_url}
-                                <img class="pw-search-poster" src={r.cover_url} alt="" loading="lazy" />
+                                <img
+                                    class="pw-search-poster"
+                                    src={bookCoverSrc(r.cover_url)}
+                                    alt=""
+                                    loading="lazy"
+                                    onload={(event) => validateBookCover(event, r.cover_url!)}
+                                    onerror={(event) => retryBookCover(event, r.cover_url!)}
+                                />
                             {:else}
                                 <div class="pw-search-poster pw-search-poster-empty">?</div>
                             {/if}

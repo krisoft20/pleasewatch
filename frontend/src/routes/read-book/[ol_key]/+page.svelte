@@ -404,7 +404,7 @@
     onMount(async () => {
         readPrefs();
 
-        api.me().catch(() => goto('/login'));
+        api.me().catch(() => goto('/login', { replaceState: true }));
         const restart = page.url.searchParams.get('restart') === '1';
         const jumpCfi = page.url.searchParams.get('cfi');
         const detailP = api.bookDetail(olKey);
@@ -644,7 +644,7 @@
     }
 
     function exit() {
-        goto(`/book/${olKey}`);
+        goto(`/book/${olKey}`, { replaceState: true });
     }
 
     function download() {

@@ -1,8 +1,9 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import { goto, afterNavigate } from '$app/navigation';
     import { page } from '$app/state';
     import { api, type BookDetail, type BookHit, type BookSource, type User } from '$lib/api';
+    import { bookCoverNeedsRefresh, bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t, plural } from '$lib/i18n.svelte';
     import { clickOutside } from '$lib/dismiss';
     import TopBar from '$lib/components/TopBar.svelte';
@@ -44,6 +45,7 @@
 
     let lastKey = '';
     let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+    let coverRefreshTimer: ReturnType<typeof setTimeout> | null = null;
     let authorRefreshToken = 0;
 
     async function bootstrap(k: string) {
@@ -63,6 +65,7 @@
         sourcesLoaded = false;
         sources = [];
         if (safetyTimer) clearTimeout(safetyTimer);
+        if (coverRefreshTimer) clearTimeout(coverRefreshTimer);
         safetyTimer = setTimeout(() => {
             if (loading) {
                 loading = false;
@@ -72,6 +75,15 @@
         try {
             await loadDetail();
             const loadedDetail = detail as BookDetail | null;
+            if (loadedDetail && bookCoverNeedsRefresh(loadedDetail.book.cover_url)) {
+                coverRefreshTimer = setTimeout(async () => {
+                    if (refreshToken !== authorRefreshToken) return;
+                    try {
+                        const fresh = await api.bookDetail(k);
+                        if (refreshToken === authorRefreshToken) detail = fresh;
+                    } catch {}
+                }, 1800);
+            }
             if (loadedDetail && !loadedDetail.author_keys?.length) {
                 void refreshAuthorKeys(k, refreshToken);
             }
@@ -88,10 +100,15 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login');
+            goto('/login', { replaceState: true });
             return;
         }
         await bootstrap(olKey);
+    });
+
+    onDestroy(() => {
+        if (safetyTimer) clearTimeout(safetyTimer);
+        if (coverRefreshTimer) clearTimeout(coverRefreshTimer);
     });
 
     afterNavigate(() => {
@@ -229,11 +246,11 @@
     }
 
     function read() {
-        goto(`/read-book/${olKey}`);
+        goto(`/read-book/${olKey}`, { replaceState: true });
     }
 
     function readAgain() {
-        goto(`/read-book/${olKey}?restart=1`);
+        goto(`/read-book/${olKey}?restart=1`, { replaceState: true });
     }
 
     async function setShelf(status: string) {
@@ -476,7 +493,13 @@
             <div class="pw-v1-hero-wrap pw-bk-hero">
                 <div class="pw-v1-hero-bg">
                     {#if detail.book.cover_url}
-                        <img class="pw-v1-hero-img pw-bk-hero-img" src={detail.book.cover_url} alt="" />
+                        <img
+                            class="pw-v1-hero-img pw-bk-hero-img"
+                            src={bookCoverSrc(detail.book.cover_url)}
+                            alt=""
+                            onload={(event) => validateBookCover(event, detail!.book.cover_url!)}
+                            onerror={(event) => retryBookCover(event, detail!.book.cover_url!)}
+                        />
                     {/if}
                     <div class="pw-v1-hero-grad-x"></div>
                     <div class="pw-v1-hero-grad-y"></div>
@@ -486,7 +509,12 @@
                             <div class="pw-bk-cover-col">
                                 <div class="pw-bk-cover" class:pw-plat-frame={finished}>
                                     {#if detail.book.cover_url}
-                                        <img src={detail.book.cover_url} alt={title} />
+                                        <img
+                                            src={bookCoverSrc(detail.book.cover_url)}
+                                            alt={title}
+                                            onload={(event) => validateBookCover(event, detail!.book.cover_url!)}
+                                            onerror={(event) => retryBookCover(event, detail!.book.cover_url!)}
+                                        />
                                     {/if}
                                     {#if scoreShown}
                                         <span class="pw-bk-cover-badge pw-bk-cover-score">★ {scoreShown}</span>
@@ -978,7 +1006,14 @@
                                 <div class="pw-bk-cardx-cover">
                                     <span class="pw-bk-cardx-num">#{i + 1}</span>
                                     {#if b.cover_url}
-                                        <img src={b.cover_url} alt={b.title} loading="lazy" decoding="async" />
+                                        <img
+                                            src={bookCoverSrc(b.cover_url)}
+                                            alt={b.title}
+                                            loading="lazy"
+                                            decoding="async"
+                                            onload={(event) => validateBookCover(event, b.cover_url!)}
+                                            onerror={(event) => retryBookCover(event, b.cover_url!)}
+                                        />
                                     {:else}
                                         <div class="pw-bk-cardx-empty">
                                             <svg
@@ -1052,7 +1087,14 @@
                             <a class="pw-bk-cardx" href={`/book/${b.ol_key}`} data-sveltekit-preload-data="hover">
                                 <div class="pw-bk-cardx-cover">
                                     {#if b.cover_url}
-                                        <img src={b.cover_url} alt={b.title} loading="lazy" decoding="async" />
+                                        <img
+                                            src={bookCoverSrc(b.cover_url)}
+                                            alt={b.title}
+                                            loading="lazy"
+                                            decoding="async"
+                                            onload={(event) => validateBookCover(event, b.cover_url!)}
+                                            onerror={(event) => retryBookCover(event, b.cover_url!)}
+                                        />
                                     {:else}
                                         <div class="pw-bk-cardx-empty">
                                             <svg

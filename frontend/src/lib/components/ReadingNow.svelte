@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t, plural } from '$lib/i18n.svelte';
 
     type Item = {
@@ -21,14 +22,6 @@
         if (!s.pages || s.percent == null) return null;
         return Math.max(0, Math.round(s.pages * (1 - s.percent)));
     }
-
-    function retryCoverFromOpenLibrary(event: Event, coverUrl: string) {
-        const image = event.currentTarget as HTMLImageElement;
-        const coverId = coverUrl.match(/\/api\/books\/cover\/(\d+)/)?.[1];
-        if (!coverId || image.dataset.openLibraryFallback) return;
-        image.dataset.openLibraryFallback = 'true';
-        image.src = `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`;
-    }
 </script>
 
 <div class="pw-shelf">
@@ -42,10 +35,11 @@
                 <a class="pw-rn-cover" href={`/book/${s.ol_key}`}>
                     {#if s.cover_url}
                         <img
-                            src={s.cover_url}
+                            src={bookCoverSrc(s.cover_url)}
                             alt={s.title}
                             loading="eager"
-                            onerror={(event) => retryCoverFromOpenLibrary(event, s.cover_url!)}
+                            onload={(event) => validateBookCover(event, s.cover_url!)}
+                            onerror={(event) => retryBookCover(event, s.cover_url!)}
                         />
                     {/if}
                 </a>

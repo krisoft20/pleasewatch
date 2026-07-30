@@ -17,7 +17,7 @@
         try {
             await api.logout();
         } catch {}
-        goto('/login');
+        goto('/login', { replaceState: true });
     }
 </script>
 

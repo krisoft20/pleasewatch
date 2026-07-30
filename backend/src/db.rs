@@ -1681,12 +1681,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn fill_missing_book_cover(&self, ol_key: &str, cover_url: &str) -> Result<bool> {
+    pub fn update_book_cover(&self, ol_key: &str, cover_url: &str) -> Result<bool> {
         let changed = self.conn.execute(
             "UPDATE books
              SET cover_url = ?1
              WHERE ol_key = ?2
-               AND (cover_url IS NULL OR trim(cover_url) = '')",
+               AND coalesce(cover_url, '') <> ?1",
             params![cover_url, ol_key],
         )?;
         Ok(changed > 0)
@@ -1714,10 +1714,10 @@ impl Database {
         rows.collect()
     }
 
-    pub fn list_book_keys_owned(
+    pub fn list_book_states_owned(
         &self,
         ol_keys: &[String],
-    ) -> Result<std::collections::HashMap<String, bool>> {
+    ) -> Result<std::collections::HashMap<String, (bool, Option<String>)>> {
         if ol_keys.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
@@ -1725,14 +1725,17 @@ impl Database {
             .map(|i| format!("?{i}"))
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!("SELECT ol_key, file_path FROM books WHERE ol_key IN ({placeholders})");
+        let sql = format!(
+            "SELECT ol_key, file_path, cover_url FROM books WHERE ol_key IN ({placeholders})"
+        );
         let mut stmt = self.conn.prepare(&sql)?;
         let params_vec: Vec<&dyn rusqlite::ToSql> =
             ol_keys.iter().map(|k| k as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(params_vec.as_slice(), |r| {
             let key: String = r.get(0)?;
             let fp: Option<String> = r.get(1)?;
-            Ok((key, fp.is_some()))
+            let cover_url: Option<String> = r.get(2)?;
+            Ok((key, (fp.is_some(), cover_url)))
         })?;
         rows.collect::<Result<std::collections::HashMap<_, _>>>()
     }
@@ -3660,6 +3663,27 @@ mod tests {
                 params![id, format!("{id}-name"), format!("{id}@example.com")],
             )
             .unwrap();
+    }
+
+    #[test]
+    fn book_library_state_uses_the_stored_cover() {
+        let db = collection_db();
+        db.conn
+            .execute(
+                "INSERT INTO books (id, ol_key, title, cover_url, status)
+                 VALUES ('book-1', 'OL33402895W', 'System Collapse',
+                         '/api/books/cover/14538949.jpg', 'ready')",
+                [],
+            )
+            .unwrap();
+
+        let keys = vec!["OL33402895W".to_string()];
+        let states = db.list_book_states_owned(&keys).unwrap();
+
+        assert_eq!(
+            states.get("OL33402895W"),
+            Some(&(false, Some("/api/books/cover/14538949.jpg".to_string())))
+        );
     }
 
     #[test]

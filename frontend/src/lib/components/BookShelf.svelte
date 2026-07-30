@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto, preloadData } from '$app/navigation';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
 
     type Item = { ol_key: string; title: string; cover_url: string | null; authors?: string | null };
 
@@ -21,14 +22,6 @@
 
     function open(b: Item) {
         goto(`/book/${b.ol_key}`);
-    }
-
-    function retryCoverFromOpenLibrary(event: Event, coverUrl: string) {
-        const image = event.currentTarget as HTMLImageElement;
-        const coverId = coverUrl.match(/\/api\/books\/cover\/(\d+)/)?.[1];
-        if (!coverId || image.dataset.openLibraryFallback) return;
-        image.dataset.openLibraryFallback = 'true';
-        image.src = `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`;
     }
 </script>
 
@@ -53,11 +46,12 @@
                 >
                     {#if b.cover_url}
                         <img
-                            src={b.cover_url}
+                            src={bookCoverSrc(b.cover_url)}
                             alt={b.title}
                             loading={i < 8 ? 'eager' : 'lazy'}
                             decoding="async"
-                            onerror={(event) => retryCoverFromOpenLibrary(event, b.cover_url!)}
+                            onload={(event) => validateBookCover(event, b.cover_url!)}
+                            onerror={(event) => retryBookCover(event, b.cover_url!)}
                             class="pw-card-img w-full h-full object-cover"
                         />
                     {:else}
