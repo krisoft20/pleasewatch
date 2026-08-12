@@ -1,4 +1,4 @@
-FROM rust:1.88-bookworm
+FROM rust:1.96-bookworm
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends mold clang \
