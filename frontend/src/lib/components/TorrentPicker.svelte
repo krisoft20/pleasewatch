@@ -105,7 +105,11 @@
     let savingQbit = $state(false);
     let starting = $state<string | null>(null);
     let aggFilter = $state<'all' | 'jackett' | 'prowlarr'>('all');
+    type TorrentSource = 'jackett' | 'prowlarr';
+    let searching = $state<TorrentSource[]>([]);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let searchAbort: AbortController | undefined;
+    let searchRun = 0;
     let searchInput = $state<HTMLInputElement>();
     let activeIndexers = $derived.by(() => {
         const names: string[] = [];
@@ -174,28 +178,73 @@
         return '';
     }
 
+    function mergeResults(found: TorrentOption[]) {
+        const merged = new Map(results.map((item) => [item.magnet, item]));
+        for (const item of found) {
+            const old = merged.get(item.magnet);
+            if (!old || (item.pref_score ?? 0) > (old.pref_score ?? 0) || item.seeds > old.seeds) {
+                merged.set(item.magnet, item);
+            }
+        }
+        results = [...merged.values()]
+            .sort((a, b) => {
+                const pref = (b.pref_score ?? 0) - (a.pref_score ?? 0);
+                return pref || b.seeds - a.seeds;
+            })
+            .slice(0, 120);
+    }
+
     async function run() {
+        const runId = ++searchRun;
+        searchAbort?.abort();
+        const abort = new AbortController();
+        searchAbort = abort;
         loading = true;
         err = '';
+        results = [];
+        aggFilter = 'all';
+        const sources: TorrentSource[] = ['jackett', 'prowlarr'];
+        searching = [...sources];
         const finalQ = (q + langSuffix(lang)).trim();
-        try {
-            results = await api.torrentSearch(finalQ, { kind, imdb: imdbId });
-        } catch (caught) {
-            const msg = caught instanceof Error ? caught.message : 'search failed';
-            if (msg.includes('not configured')) {
-                envErr = true;
-            } else {
-                err = msg;
+        const errors: string[] = [];
+
+        async function search(source: TorrentSource) {
+            try {
+                const found = await api.torrentSearch(finalQ, {
+                    kind,
+                    imdb: imdbId,
+                    source,
+                    signal: abort.signal
+                });
+                if (runId !== searchRun) return;
+                mergeResults(found);
+            } catch (caught) {
+                if (runId !== searchRun || abort.signal.aborted) return;
+                errors.push(caught instanceof Error ? caught.message : 'search failed');
+            } finally {
+                if (runId !== searchRun) return;
+                searching = searching.filter((name) => name !== source);
+                loading = results.length === 0 && searching.length > 0;
             }
-            results = [];
-        } finally {
-            loading = false;
         }
+
+        await Promise.all(sources.map(search));
+        if (runId !== searchRun || abort.signal.aborted) return;
+
+        loading = false;
+        if (results.length > 0 || errors.length === 0) return;
+        if (errors.every((msg) => msg.includes('not configured'))) envErr = true;
+        else err = errors[0];
     }
 
     onMount(() => {
         loadSettings();
         searchInput?.focus();
+        return () => {
+            clearTimeout(timer);
+            searchRun++;
+            searchAbort?.abort();
+        };
     });
 
     $effect(() => {
@@ -478,7 +527,7 @@
             {:else if loading}
                 <div class="pw-tp-empty">
                     <div class="pw-tp-spin"></div>
-                    <p>searching indexers...</p>
+                    <p>searching {searching.length > 0 ? searching.join(' + ') : 'indexers'}...</p>
                 </div>
             {:else if results.length === 0}
                 <div class="pw-tp-empty">
@@ -539,7 +588,10 @@
             {@const jCount = results.filter((r) => r.aggregator === 'jackett').length}
             {@const pCount = results.filter((r) => r.aggregator === 'prowlarr').length}
             <footer class="pw-tp-foot">
-                <span>{results.length} results</span>
+                <span>
+                    {results.length} results
+                    {#if searching.length > 0}<span class="pw-tp-more">checking {searching.join(' + ')}...</span>{/if}
+                </span>
                 {#if jCount > 0 && pCount > 0}
                     <div class="pw-tp-agg-tabs">
                         <button class:on={aggFilter === 'all'} onclick={() => (aggFilter = 'all')}>all</button>
@@ -886,6 +938,10 @@
         border-top: 1px solid rgba(255, 255, 255, 0.05);
         font-size: 11.5px;
         color: rgba(220, 220, 225, 0.42);
+    }
+    .pw-tp-more {
+        margin-left: 8px;
+        color: var(--pw-accent);
     }
     .pw-tp-close {
         background: transparent;

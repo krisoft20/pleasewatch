@@ -1056,11 +1056,15 @@ export const api = {
             body: JSON.stringify({ episode_id })
         }),
 
-    torrentSearch: (q: string, opts: { kind?: string; imdb?: string } = {}) => {
+    torrentSearch: (
+        q: string,
+        opts: { kind?: string; imdb?: string; source?: 'jackett' | 'prowlarr'; signal?: AbortSignal } = {}
+    ) => {
         const params = new URLSearchParams({ q });
         if (opts.kind) params.set('kind', opts.kind);
         if (opts.imdb) params.set('imdb', opts.imdb);
-        return request<TorrentOption[]>(`/api/torrents/search?${params}`);
+        if (opts.source) params.set('source', opts.source);
+        return request<TorrentOption[]>(`/api/torrents/search?${params}`, { signal: opts.signal });
     },
 
     torrentIndexers: () => request<string[]>('/api/torrents/indexers'),

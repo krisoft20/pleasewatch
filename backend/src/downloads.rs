@@ -31,10 +31,18 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum SearchSource {
+    Jackett,
+    Prowlarr,
+}
+
+#[derive(Deserialize)]
 struct SearchQuery {
     q: String,
     kind: Option<String>,
     imdb: Option<String>,
+    source: Option<SearchSource>,
 }
 
 async fn handle_search(
@@ -42,13 +50,23 @@ async fn handle_search(
     State(state): State<Arc<AppState>>,
     Query(q): Query<SearchQuery>,
 ) -> impl IntoResponse {
-    let jackett = state.jackett.lock().await.clone();
-    let prowlarr = state.prowlarr.lock().await.clone();
+    let mut jackett = state.jackett.lock().await.clone();
+    let mut prowlarr = state.prowlarr.lock().await.clone();
     if jackett.is_none() && prowlarr.is_none() {
         return err(
             StatusCode::SERVICE_UNAVAILABLE,
             "no torrent indexer configured",
         );
+    }
+
+    match q.source {
+        Some(SearchSource::Jackett) => prowlarr = None,
+        Some(SearchSource::Prowlarr) => jackett = None,
+        None => {}
+    }
+
+    if jackett.is_none() && prowlarr.is_none() {
+        return Json::<Vec<TorrentOption>>(Vec::new()).into_response();
     }
 
     if q.q.trim().is_empty() {
@@ -63,7 +81,11 @@ async fn handle_search(
         _ => &[],
     };
 
-    let indexers = resolve_indexers(&state, q.kind.as_deref()).await;
+    let indexers = if jackett.is_some() {
+        resolve_indexers(&state, q.kind.as_deref()).await
+    } else {
+        Vec::new()
+    };
 
     let is_book_kind = matches!(q.kind.as_deref(), Some("book"));
     let search_q = if is_book_kind {
@@ -80,12 +102,15 @@ async fn handle_search(
         q.q.clone()
     };
 
-    let mut title_items = dual_search(&jackett, &prowlarr, &search_q, &indexers, cats, None).await;
-    let imdb_items: Vec<TorrentOption> = if let Some(imdb) = q.imdb.as_deref() {
-        dual_search(&jackett, &prowlarr, &search_q, &indexers, cats, Some(imdb)).await
-    } else {
-        Vec::new()
+    let title_search = dual_search(&jackett, &prowlarr, &search_q, &indexers, cats, None);
+    let imdb_search = async {
+        if let Some(imdb) = q.imdb.as_deref() {
+            dual_search(&jackett, &prowlarr, &search_q, &indexers, cats, Some(imdb)).await
+        } else {
+            Vec::new()
+        }
     };
+    let (mut title_items, imdb_items) = tokio::join!(title_search, imdb_search);
 
     if is_book_kind && title_items.is_empty() && imdb_items.is_empty() {
         let tokens: Vec<&str> = q.q.split_whitespace().collect();
