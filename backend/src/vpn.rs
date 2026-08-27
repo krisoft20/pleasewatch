@@ -38,7 +38,7 @@ async fn handle_status(Extension(auth): Extension<AuthUser>) -> impl IntoRespons
     }
 
     let env = read_env();
-    let enabled = override_yml().exists();
+    let enabled = vpn_override_yml().exists();
     let pip = if enabled { gluetun_ip().await } else { None };
 
     Json(VpnStatus {
@@ -93,7 +93,7 @@ async fn handle_save(
         eprintln!("[vpn] write env: {e}");
         return err(StatusCode::INTERNAL_SERVER_ERROR, "could not write env");
     }
-    if let Err(e) = std::fs::write(override_yml(), OVERRIDE_YML) {
+    if let Err(e) = std::fs::write(vpn_override_yml(), VPN_OVERRIDE_YML) {
         eprintln!("[vpn] write override: {e}");
         return err(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -125,6 +125,8 @@ async fn handle_disable(
         return err(StatusCode::FORBIDDEN, "admin only");
     }
 
+    let _ = compose("stop", &[], &["gluetun"]);
+
     let mut env = read_env();
     for k in [
         "VPN_PROVIDER",
@@ -141,11 +143,10 @@ async fn handle_disable(
         eprintln!("[vpn] write env: {e}");
         return err(StatusCode::INTERNAL_SERVER_ERROR, "could not write env");
     }
-    let _ = std::fs::remove_file(override_yml());
+    let _ = std::fs::remove_file(vpn_override_yml());
 
     swap_qbit_url(&state, "http://qbittorrent:8080").await;
 
-    let _ = compose("stop", &[], &["gluetun"]);
     let _ = compose("up", &["-d", "--force-recreate"], &["qbittorrent"]);
 
     println!("[vpn] disabled by {}", auth.username);
@@ -171,8 +172,14 @@ fn deploy_dir() -> PathBuf {
 fn env_file() -> PathBuf {
     deploy_dir().join(".env")
 }
-fn override_yml() -> PathBuf {
+fn edge_override_yml() -> PathBuf {
+    deploy_dir().join("docker-compose.edge.yml")
+}
+fn legacy_override_yml() -> PathBuf {
     deploy_dir().join("docker-compose.override.yml")
+}
+fn vpn_override_yml() -> PathBuf {
+    deploy_dir().join("docker-compose.vpn.yml")
 }
 fn compose_yml() -> String {
     std::env::var("PW_COMPOSE_FILE").unwrap_or_else(|_| "/manage/docker-compose.simple.yml".into())
@@ -233,7 +240,7 @@ fn write_env(env: &std::collections::BTreeMap<String, String>) -> std::io::Resul
     std::fs::write(&path, buf)
 }
 
-const OVERRIDE_YML: &str = r#"services:
+const VPN_OVERRIDE_YML: &str = r#"services:
   gluetun:
     image: qmcgaw/gluetun:latest
     cap_add: [NET_ADMIN]
@@ -298,8 +305,18 @@ fn compose(verb: &str, flags: &[&str], services: &[&str]) -> Result<(), String> 
         .arg(env_file())
         .arg("-f")
         .arg(compose_yml());
-    if override_yml().exists() {
-        c.arg("-f").arg(override_yml());
+    let edge_override = edge_override_yml();
+    if edge_override.exists() {
+        c.arg("-f").arg(edge_override);
+    } else {
+        let legacy_override = legacy_override_yml();
+        if legacy_override.exists() {
+            c.arg("-f").arg(legacy_override);
+        }
+    }
+    let vpn_override = vpn_override_yml();
+    if vpn_override.exists() {
+        c.arg("-f").arg(vpn_override);
     }
     c.arg(verb).args(flags).args(services);
     let out = c.output().map_err(|e| e.to_string())?;

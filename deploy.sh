@@ -110,16 +110,21 @@ ssh -o ServerAliveInterval=30 "$VPS_HOST" "set -eo pipefail; cd $VPS_DIR/deploy 
         alpine sh -c 'cp /target/release/pleasewatch /host/pleasewatch.new && mv /host/pleasewatch.new /host/pleasewatch && chmod +x /host/pleasewatch' && \
       NEED_RESTART=1; \
     fi && \
-    OVERRIDE_ARG='' && \
-    if [ -f docker-compose.override.yml ]; then OVERRIDE_ARG='-f docker-compose.override.yml'; fi && \
-    UP_OUT=\$(docker compose -f $COMPOSE \$OVERRIDE_ARG up -d 2>&1) && \
+    COMPOSE_ARGS='-f $COMPOSE' && \
+    if [ -f docker-compose.edge.yml ]; then \
+      COMPOSE_ARGS=\"\$COMPOSE_ARGS -f docker-compose.edge.yml\"; \
+    elif [ -f docker-compose.override.yml ]; then \
+      COMPOSE_ARGS=\"\$COMPOSE_ARGS -f docker-compose.override.yml\"; \
+    fi && \
+    if [ -f docker-compose.vpn.yml ]; then COMPOSE_ARGS=\"\$COMPOSE_ARGS -f docker-compose.vpn.yml\"; fi && \
+    UP_OUT=\$(docker compose \$COMPOSE_ARGS up -d 2>&1) && \
     echo \"\$UP_OUT\" | tail -3 && \
     if [ \"\$NEED_RESTART\" = 1 ]; then \
       if echo \"\$UP_OUT\" | grep -Eq 'pleasewatch-pleasewatch-1.*(Started|Recreated|Created)'; then \
         echo '-> pleasewatch already restarted'; \
       else \
         echo '-> restart pleasewatch (new binary)' && \
-        docker compose -f $COMPOSE \$OVERRIDE_ARG up -d --no-deps --force-recreate pleasewatch 2>&1 | tail -3; \
+        docker compose \$COMPOSE_ARGS up -d --no-deps --force-recreate pleasewatch 2>&1 | tail -3; \
       fi; \
     else \
       echo '-> binary unchanged, no restart'; \

@@ -144,7 +144,16 @@ docker run --rm \
     alpine sh -c 'cp /target/release/pleasewatch /host/pleasewatch.new && mv /host/pleasewatch.new /host/pleasewatch && chmod +x /host/pleasewatch'
 
 echo "[+] starting stack with $COMPOSE_FILE..."
-docker compose -p "$PW_PROJECT" -f "$COMPOSE_FILE" up -d
+compose_args=(-p "$PW_PROJECT" -f "$COMPOSE_FILE")
+if [ -f docker-compose.edge.yml ]; then
+    compose_args+=(-f docker-compose.edge.yml)
+elif [ -f docker-compose.override.yml ]; then
+    compose_args+=(-f docker-compose.override.yml)
+fi
+if [ -f docker-compose.vpn.yml ]; then
+    compose_args+=(-f docker-compose.vpn.yml)
+fi
+docker compose "${compose_args[@]}" up -d
 
 public_url=$(grep '^PUBLIC_BASE_URL=' .env | cut -d= -f2- || true)
 host=$(grep '^PW_HOSTNAME=' .env | cut -d= -f2- || true)
