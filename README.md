@@ -4,13 +4,20 @@ pleasewatch is a self-hosted media library and watch app. It has a Rust/Axum bac
 
 The project is built for private libraries and media you have the right to access. The torrent/indexer pieces are integrations, not a license to fetch copyrighted content.
 
+![library](docs/screenshots/library.webp)
+
+![show page](docs/screenshots/show.webp)
+
 ## what it does
 
 - movie and tv search through TMDB
 - library pages for movies, shows, books, manga, and anime
 - continue watching, watch progress, collections, recommendations, and recently added shelves
 - browser video player with audio/subtitle picker, subtitle search/upload/sync, skip intro, next episode, clips, and watch together
-- torrent picker backed by qBittorrent, Jackett, and Prowlarr
+- second subtitle track above the main one, hover a word to see its match in the other language (en/pl/de), click to hear it
+- live sports board with scores from ESPN, sources configured in .env
+- tv channels from the public iptv-org lists, dead and drm-protected ones filtered out
+- torrent picker backed by qBittorrent, Jackett, Prowlarr, and ext.to through FlareSolverr
 - first-run onboarding for TMDB and optional download services
 - admin panel for users, pending approvals, downloads, clips, storage, logs, settings, health, and watch leaderboard
 - sqlite-backed single binary backend, static frontend served by the backend in prod
