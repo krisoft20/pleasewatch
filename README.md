@@ -8,6 +8,8 @@ The project is built for private libraries and media you have the right to acces
 
 ![show page](docs/screenshots/show.webp)
 
+![player](docs/screenshots/player.webp)
+
 ## what it does
 
 - movie and tv search through TMDB
