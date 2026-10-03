@@ -40,8 +40,10 @@ impl Channel {
     }
 }
 
-static CHANNELS: LazyLock<RwLock<HashMap<String, Vec<Channel>>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
-static MPDS: LazyLock<RwLock<HashMap<String, (Instant, String, String)>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
+static CHANNELS: LazyLock<RwLock<HashMap<String, Vec<Channel>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+static MPDS: LazyLock<RwLock<HashMap<String, (Instant, String, String)>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 fn countries() -> Vec<String> {
     std::env::var("TV_COUNTRIES")
@@ -67,7 +69,10 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
     let authed = Router::new()
         .route("/api/tv/channels", get(list_channels))
         .route("/api/tv/play", post(play))
-        .layer(axum::middleware::from_fn_with_state(state, crate::middleware::require_auth));
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            crate::middleware::require_auth,
+        ));
     public.merge(authed)
 }
 
@@ -85,7 +90,12 @@ pub fn spawn_refresher() {
 async fn refresh_country(country: &str) {
     let t0 = Instant::now();
     let url = format!("https://iptv-org.github.io/iptv/countries/{country}.m3u");
-    let text = match client().get(&url).timeout(Duration::from_secs(30)).send().await {
+    let text = match client()
+        .get(&url)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+    {
         Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
         Ok(r) => {
             crate::pe!("[tv] {country} playlist http {}", r.status());
@@ -105,7 +115,13 @@ async fn refresh_country(country: &str) {
         let mut set = tokio::task::JoinSet::new();
         for ch in chunk.iter().cloned() {
             let c = c.clone();
-            set.spawn(async move { if probe(&c, &ch).await { Some(ch) } else { None } });
+            set.spawn(async move {
+                if probe(&c, &ch).await {
+                    Some(ch)
+                } else {
+                    None
+                }
+            });
         }
         while let Some(r) = set.join_next().await {
             if let Ok(Some(ch)) = r {
@@ -114,7 +130,11 @@ async fn refresh_country(country: &str) {
         }
     }
     alive.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    crate::pi!("[tv] {country}: {}/{total} alive in {:.0}s", alive.len(), t0.elapsed().as_secs_f32());
+    crate::pi!(
+        "[tv] {country}: {}/{total} alive in {:.0}s",
+        alive.len(),
+        t0.elapsed().as_secs_f32()
+    );
     CHANNELS.write().await.insert(country.to_string(), alive);
 }
 
@@ -124,12 +144,16 @@ async fn probe(c: &reqwest::Client, ch: &Channel) -> bool {
         if let Some(r) = &ch.referer {
             req = req.header("Referer", r);
         }
-        let Ok(resp) = req.send().await else { return false };
+        let Ok(resp) = req.send().await else {
+            return false;
+        };
         if !resp.status().is_success() {
             return false;
         }
         let url = resp.url().to_string();
-        let Ok(xml) = resp.text().await else { return false };
+        let Ok(xml) = resp.text().await else {
+            return false;
+        };
         return !xml.contains("ContentProtection") && !parse_mpd(&xml, &url).is_empty();
     }
     let mut req = c.get(&ch.url).header("Range", "bytes=0-4095");
@@ -139,13 +163,20 @@ async fn probe(c: &reqwest::Client, ch: &Channel) -> bool {
     if let Some(ua) = &ch.ua {
         req = req.header("User-Agent", ua);
     }
-    let Ok(resp) = req.send().await else { return false };
+    let Ok(resp) = req.send().await else {
+        return false;
+    };
     if !resp.status().is_success() {
         return false;
     }
-    let Ok(body) = resp.bytes().await else { return false };
+    let Ok(body) = resp.bytes().await else {
+        return false;
+    };
     let head = String::from_utf8_lossy(&body[..body.len().min(4096)]);
-    head.trim_start_matches('\u{feff}').trim_start().starts_with("#EXTM3U") || head.contains("<MPD")
+    head.trim_start_matches('\u{feff}')
+        .trim_start()
+        .starts_with("#EXTM3U")
+        || head.contains("<MPD")
 }
 
 fn parse_m3u(text: &str, country: &str) -> Vec<Channel> {
@@ -203,7 +234,13 @@ fn attr(line: &str, key: &str) -> Option<String> {
 }
 
 async fn find(id: &str) -> Option<Channel> {
-    CHANNELS.read().await.values().flatten().find(|c| c.id == id).cloned()
+    CHANNELS
+        .read()
+        .await
+        .values()
+        .flatten()
+        .find(|c| c.id == id)
+        .cloned()
 }
 
 #[derive(Serialize)]
@@ -235,18 +272,31 @@ struct PlayResp {
     master_url: String,
 }
 
-async fn play(Extension(_auth): Extension<AuthUser>, State(_s): State<Arc<AppState>>, Json(body): Json<PlayReq>) -> Response {
+async fn play(
+    Extension(_auth): Extension<AuthUser>,
+    State(_s): State<Arc<AppState>>,
+    Json(body): Json<PlayReq>,
+) -> Response {
     let Some(ch) = find(&body.id).await else {
         return (StatusCode::NOT_FOUND, "unknown channel").into_response();
     };
-    let referer = ch.referer.clone().unwrap_or_else(|| crate::live::origin_of(&ch.url));
+    let referer = ch
+        .referer
+        .clone()
+        .unwrap_or_else(|| crate::live::origin_of(&ch.url));
     let token = crate::live::issue_token(ch.url.clone(), referer).await;
     if ch.dash() {
         crate::pi!("[tv] play {} via mpd -> hls", ch.name);
-        return Json(PlayResp { master_url: format!("/api/tv/dash/{token}/master.m3u8") }).into_response();
+        return Json(PlayResp {
+            master_url: format!("/api/tv/dash/{token}/master.m3u8"),
+        })
+        .into_response();
     }
     crate::pi!("[tv] play {} via proxy", ch.name);
-    Json(PlayResp { master_url: format!("/api/live/hls/{token}/master.m3u8") }).into_response()
+    Json(PlayResp {
+        master_url: format!("/api/live/hls/{token}/master.m3u8"),
+    })
+    .into_response()
 }
 
 struct Track {
@@ -269,51 +319,89 @@ struct Track {
 fn parse_mpd(xml: &str, mpd_url: &str) -> Vec<Track> {
     let dir = mpd_url.split('?').next().unwrap_or(mpd_url);
     let dir = dir.rsplit_once('/').map(|(d, _)| d).unwrap_or(dir);
-    let abs = |u: &str| if u.starts_with("http") { u.to_string() } else { format!("{dir}/{u}") };
+    let abs = |u: &str| {
+        if u.starts_with("http") {
+            u.to_string()
+        } else {
+            format!("{dir}/{u}")
+        }
+    };
     let head = |s: &str| format!(" {}", &s[..s.find('>').unwrap_or(s.len())]);
 
     let mut out = Vec::new();
     for set in xml.split("<AdaptationSet").skip(1) {
         let set = set.split("</AdaptationSet>").next().unwrap_or(set);
         let sh = head(set);
-        let ct = attr(&sh, "contentType").or_else(|| attr(&sh, "mimeType")).unwrap_or_default();
+        let ct = attr(&sh, "contentType")
+            .or_else(|| attr(&sh, "mimeType"))
+            .unwrap_or_default();
         let video = ct.starts_with("video");
         if !video && !ct.starts_with("audio") {
             continue;
         }
         let tpl = |s: &str| -> Option<(String, String, u64, u64, Vec<(u64, u64)>)> {
             let ti = s.find("<SegmentTemplate")?;
-            let body = &s[ti..s[ti..].find("</SegmentTemplate>").map(|e| ti + e).unwrap_or(s.len())];
+            let body = &s[ti..s[ti..]
+                .find("</SegmentTemplate>")
+                .map(|e| ti + e)
+                .unwrap_or(s.len())];
             let th = head(&body[16..]);
-            let timescale = attr(&th, "timescale").and_then(|v| v.parse().ok()).unwrap_or(1);
-            let start = attr(&th, "startNumber").and_then(|v| v.parse().ok()).unwrap_or(1);
+            let timescale = attr(&th, "timescale")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            let start = attr(&th, "startNumber")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
             let mut segs = Vec::new();
             let mut next = 0u64;
             for s in body.split("<S ").skip(1) {
                 let s = head(s);
-                let Some(d) = attr(&s, "d").and_then(|v| v.parse::<u64>().ok()) else { continue };
+                let Some(d) = attr(&s, "d").and_then(|v| v.parse::<u64>().ok()) else {
+                    continue;
+                };
                 let mut t = attr(&s, "t").and_then(|v| v.parse().ok()).unwrap_or(next);
-                let r = attr(&s, "r").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0).max(0);
+                let r = attr(&s, "r")
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .unwrap_or(0)
+                    .max(0);
                 for _ in 0..=r {
                     segs.push((t, d));
                     t += d;
                 }
                 next = t;
             }
-            Some((attr(&th, "media")?, attr(&th, "initialization")?, timescale, start, segs))
+            Some((
+                attr(&th, "media")?,
+                attr(&th, "initialization")?,
+                timescale,
+                start,
+                segs,
+            ))
         };
         let set_tpl = tpl(&set[..set.find("<Representation").unwrap_or(set.len())]);
 
-        let label = set.split("<Label>").nth(1).and_then(|l| l.split("</Label>").next()).map(str::to_string);
+        let label = set
+            .split("<Label>")
+            .nth(1)
+            .and_then(|l| l.split("</Label>").next())
+            .map(str::to_string);
         let alt = set.contains("value=\"alternate\"");
         for rep in set.split("<Representation").skip(1) {
             let rh = head(rep);
             let Some(id) = attr(&rh, "id") else { continue };
-            let Some((media, init, timescale, start_number, segs)) = tpl(rep).or_else(|| set_tpl.clone()) else { continue };
+            let Some((media, init, timescale, start_number, segs)) =
+                tpl(rep).or_else(|| set_tpl.clone())
+            else {
+                continue;
+            };
             if segs.is_empty() {
                 continue;
             }
-            let num = |k: &str| attr(&rh, k).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+            let num = |k: &str| {
+                attr(&rh, k)
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0)
+            };
             out.push(Track {
                 video,
                 bandwidth: num("bandwidth"),
@@ -348,15 +436,23 @@ async fn fetch_mpd(token: &str) -> Result<Vec<Track>, Response> {
     let (xml, url) = match cached {
         Some(c) => c,
         None => {
-            let resp = client().get(&t.master_url).header("Referer", &t.referer).send().await.map_err(|e| {
-                crate::pe!("[tv] mpd fetch: {e}");
-                (StatusCode::BAD_GATEWAY, "upstream error").into_response()
-            })?;
+            let resp = client()
+                .get(&t.master_url)
+                .header("Referer", &t.referer)
+                .send()
+                .await
+                .map_err(|e| {
+                    crate::pe!("[tv] mpd fetch: {e}");
+                    (StatusCode::BAD_GATEWAY, "upstream error").into_response()
+                })?;
             let url = resp.url().to_string();
             let xml = resp.text().await.unwrap_or_default();
             let mut m = MPDS.write().await;
             m.retain(|_, (at, _, _)| at.elapsed() < Duration::from_secs(60));
-            m.insert(token.to_string(), (Instant::now(), xml.clone(), url.clone()));
+            m.insert(
+                token.to_string(),
+                (Instant::now(), xml.clone(), url.clone()),
+            );
             (xml, url)
         }
     };
@@ -368,7 +464,10 @@ async fn fetch_mpd(token: &str) -> Result<Vec<Track>, Response> {
     Ok(tracks)
 }
 
-const M3U8: [(&str, &str); 2] = [("content-type", "application/vnd.apple.mpegurl"), ("cache-control", "no-cache")];
+const M3U8: [(&str, &str); 2] = [
+    ("content-type", "application/vnd.apple.mpegurl"),
+    ("cache-control", "no-cache"),
+];
 
 async fn dash_master(Path(token): Path<String>) -> Response {
     let tracks = match fetch_mpd(&token).await {
@@ -382,7 +481,12 @@ async fn dash_master(Path(token): Path<String>) -> Response {
 
     let mut m = String::from("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");
     for (i, a) in audio.iter().enumerate() {
-        let name = a.label.clone().or_else(|| a.lang.clone()).unwrap_or_else(|| a.id.clone()).replace('"', "'");
+        let name = a
+            .label
+            .clone()
+            .or_else(|| a.lang.clone())
+            .unwrap_or_else(|| a.id.clone())
+            .replace('"', "'");
         m.push_str(&format!(
             "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"{name}\",LANGUAGE=\"{}\",DEFAULT={},AUTOSELECT={},URI=\"/api/tv/dash/{token}/r/{}.m3u8\"\n",
             a.lang.as_deref().unwrap_or("und"),
@@ -394,12 +498,19 @@ async fn dash_master(Path(token): Path<String>) -> Response {
     let main_audio = audio.first();
     if video.is_empty() {
         if let Some(a) = main_audio {
-            m.push_str(&format!("#EXT-X-STREAM-INF:BANDWIDTH={},CODECS=\"{}\"\n/api/tv/dash/{token}/r/{}.m3u8\n", a.bandwidth, a.codecs, a.id));
+            m.push_str(&format!(
+                "#EXT-X-STREAM-INF:BANDWIDTH={},CODECS=\"{}\"\n/api/tv/dash/{token}/r/{}.m3u8\n",
+                a.bandwidth, a.codecs, a.id
+            ));
         }
     }
     for v in video {
         let (bw, codecs, group) = match main_audio {
-            Some(a) => (v.bandwidth + a.bandwidth, format!("{},{}", v.codecs, a.codecs), ",AUDIO=\"aud\""),
+            Some(a) => (
+                v.bandwidth + a.bandwidth,
+                format!("{},{}", v.codecs, a.codecs),
+                ",AUDIO=\"aud\"",
+            ),
             None => (v.bandwidth, v.codecs.clone(), ""),
         };
         m.push_str(&format!(
@@ -419,12 +530,26 @@ async fn dash_track(Path((token, rep)): Path<(String, String)>) -> Response {
     let Some(t) = tracks.iter().find(|t| t.id == id) else {
         return (StatusCode::NOT_FOUND, "no such track").into_response();
     };
-    let proxied = |u: &str| format!("/api/live/hls/{token}/p/{}", crate::live::hex_encode(u.as_bytes()));
+    let proxied = |u: &str| {
+        format!(
+            "/api/live/hls/{token}/p/{}",
+            crate::live::hex_encode(u.as_bytes())
+        )
+    };
     let first = t.segs.len().saturating_sub(LIVE_WINDOW);
     let nominal = t.segs[0].1.max(1);
     let by_time = t.media.contains("$Time$");
-    let seq = if by_time { t.segs[first].0 / nominal } else { t.start_number + first as u64 };
-    let target = t.segs[first..].iter().map(|s| s.1).max().unwrap_or(nominal).div_ceil(t.timescale);
+    let seq = if by_time {
+        t.segs[first].0 / nominal
+    } else {
+        t.start_number + first as u64
+    };
+    let target = t.segs[first..]
+        .iter()
+        .map(|s| s.1)
+        .max()
+        .unwrap_or(nominal)
+        .div_ceil(t.timescale);
 
     let mut p = format!(
         "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MEDIA-SEQUENCE:{seq}\n#EXT-X-MAP:URI=\"{}\"\n",
@@ -434,9 +559,16 @@ async fn dash_track(Path((token, rep)): Path<(String, String)>) -> Response {
         let url = t
             .media
             .replace("$Time$", &time.to_string())
-            .replace("$Number$", &(t.start_number + (first + i) as u64).to_string())
+            .replace(
+                "$Number$",
+                &(t.start_number + (first + i) as u64).to_string(),
+            )
             .replace("$Bandwidth$", &t.bandwidth.to_string());
-        p.push_str(&format!("#EXTINF:{:.3},\n{}\n", *d as f64 / t.timescale as f64, proxied(&url)));
+        p.push_str(&format!(
+            "#EXTINF:{:.3},\n{}\n",
+            *d as f64 / t.timescale as f64,
+            proxied(&url)
+        ));
     }
     (M3U8, p).into_response()
 }
@@ -470,7 +602,15 @@ mod tests {
         assert_eq!(t.len(), 3);
         let a = &t[0];
         assert!(!a.video && a.lang.as_deref() == Some("pl"));
-        assert_eq!(a.segs, vec![(1000, 230400), (231400, 230400), (461800, 230400), (692200, 230400)]);
+        assert_eq!(
+            a.segs,
+            vec![
+                (1000, 230400),
+                (231400, 230400),
+                (461800, 230400),
+                (692200, 230400)
+            ]
+        );
         assert_eq!(a.init, "https://edge.cdn/ch/1/dash/96kbps/p/init.mp4");
         let v = &t[1];
         assert!(v.video && v.width == 1920 && v.height == 1080 && v.codecs == "avc1.640028");

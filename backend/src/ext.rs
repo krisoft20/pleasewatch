@@ -38,7 +38,10 @@ async fn flare(payload: Value) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     let v: Value = resp.json().await.map_err(|e| e.to_string())?;
     if v["status"] != "ok" {
-        return Err(v["message"].as_str().unwrap_or("flaresolverr error").to_string());
+        return Err(v["message"]
+            .as_str()
+            .unwrap_or("flaresolverr error")
+            .to_string());
     }
     let sol = &v["solution"];
     if let Some(s) = sol["status"].as_i64() {
@@ -88,7 +91,12 @@ pub async fn search(query: &str, imdb: Option<&str>) -> Vec<TorrentOption> {
     let started = std::time::Instant::now();
     let html = {
         let mut ready = SESSION_LOCK.get_or_init(|| Mutex::new(false)).lock().await;
-        match session_req(&mut ready, json!({ "cmd": "request.get", "url": url.as_str() })).await {
+        match session_req(
+            &mut ready,
+            json!({ "cmd": "request.get", "url": url.as_str() }),
+        )
+        .await
+        {
             Ok(h) => h,
             Err(e) => {
                 crate::pe!("[ext] search failed: {e}");
@@ -104,13 +112,24 @@ pub async fn search(query: &str, imdb: Option<&str>) -> Vec<TorrentOption> {
 
     let mut out = Vec::new();
     for row in table.split("<tr>").skip(1) {
-        let Some(at) = row.find("class=\"torrent-title-link\"") else { continue };
-        let Some(href) = row[..at].rfind("href=\"/") else { continue };
-        let slug = row[href + 7..at].trim_end().trim_end_matches('"').trim_end_matches('/');
-        let Some(id) = slug.rsplit('-').next().filter(|s| s.parse::<u64>().is_ok()) else { continue };
+        let Some(at) = row.find("class=\"torrent-title-link\"") else {
+            continue;
+        };
+        let Some(href) = row[..at].rfind("href=\"/") else {
+            continue;
+        };
+        let slug = row[href + 7..at]
+            .trim_end()
+            .trim_end_matches('"')
+            .trim_end_matches('/');
+        let Some(id) = slug.rsplit('-').next().filter(|s| s.parse::<u64>().is_ok()) else {
+            continue;
+        };
 
         let rest = &row[at..];
-        let title = between(rest, "<b>", "</b>").map(strip_tags).unwrap_or_default();
+        let title = between(rest, "<b>", "</b>")
+            .map(strip_tags)
+            .unwrap_or_default();
         if title.is_empty() {
             continue;
         }
@@ -146,7 +165,11 @@ pub async fn search(query: &str, imdb: Option<&str>) -> Vec<TorrentOption> {
             aggregator: "ext".into(),
         });
     }
-    crate::pi!("[ext] {} results in {:.1}s for {url}", out.len(), started.elapsed().as_secs_f32());
+    crate::pi!(
+        "[ext] {} results in {:.1}s for {url}",
+        out.len(),
+        started.elapsed().as_secs_f32()
+    );
     out
 }
 
@@ -155,7 +178,11 @@ pub async fn resolve(placeholder: &str) -> Result<String, String> {
     if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err("bad ext id".into());
     }
-    let id: u64 = slug.rsplit('-').next().and_then(|s| s.parse().ok()).ok_or("bad ext id")?;
+    let id: u64 = slug
+        .rsplit('-')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .ok_or("bad ext id")?;
     let page = format!("{BASE}/{slug}/");
 
     let mut ready = SESSION_LOCK.get_or_init(|| Mutex::new(false)).lock().await;
@@ -190,7 +217,10 @@ pub async fn resolve(placeholder: &str) -> Result<String, String> {
     };
     let v: Value = serde_json::from_str(raw).map_err(|e| format!("bad magnet json: {e}"))?;
     if v["success"] != true {
-        return Err(v["error"].as_str().unwrap_or("magnet lookup failed").to_string());
+        return Err(v["error"]
+            .as_str()
+            .unwrap_or("magnet lookup failed")
+            .to_string());
     }
     if let Some(m) = v["magnet"].as_str().filter(|m| m.starts_with("magnet:")) {
         return Ok(m.to_string());
@@ -215,7 +245,10 @@ mod tests {
         let hits = super::search("The Mentalist S01E01", Some("tt1196946")).await;
         assert!(!hits.is_empty(), "no hits");
         for h in hits.iter().take(5) {
-            println!("{} | {} | {}b | S{} P{} | {}", h.provider, h.title, h.size, h.seeds, h.peers, h.magnet);
+            println!(
+                "{} | {} | {}b | S{} P{} | {}",
+                h.provider, h.title, h.size, h.seeds, h.peers, h.magnet
+            );
         }
         let m = super::resolve(&hits[0].magnet).await.expect("resolve");
         println!("{m}");

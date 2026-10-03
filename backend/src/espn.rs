@@ -164,7 +164,11 @@ async fn fetch(url: &str) -> Result<Vec<Event>, String> {
         .await
         .map_err(|e| e.to_string())?;
     let body: Value = serde_json::from_str(&text).map_err(|e| {
-        format!("{e} (got {} bytes starting {:?})", text.len(), &text[..text.len().min(60)])
+        format!(
+            "{e} (got {} bytes starting {:?})",
+            text.len(),
+            &text[..text.len().min(60)]
+        )
     })?;
     Ok(parse_board(&body))
 }
@@ -196,9 +200,7 @@ fn parse_board(body: &Value) -> Vec<Event> {
                 abbr: str_of(&t["abbreviation"]).unwrap_or_default(),
                 logo: str_of(&t["logo"]),
                 color: str_of(&t["color"]).map(|c| format!("#{c}")),
-                record: c["records"]
-                    .get(0)
-                    .and_then(|r| str_of(&r["summary"])),
+                record: c["records"].get(0).and_then(|r| str_of(&r["summary"])),
                 score: str_of(&c["score"]),
             };
             let keys = [

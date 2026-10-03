@@ -63,8 +63,7 @@ struct ScheduleCache {
     fetched_at: Instant,
     games: Vec<LiveGame>,
 }
-static SCHEDULE: LazyLock<RwLock<Option<ScheduleCache>>> =
-    LazyLock::new(|| RwLock::new(None));
+static SCHEDULE: LazyLock<RwLock<Option<ScheduleCache>>> = LazyLock::new(|| RwLock::new(None));
 
 static REFRESHING: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
 static LAST_ASKED: LazyLock<RwLock<Option<Instant>>> = LazyLock::new(|| RwLock::new(None));
@@ -98,7 +97,9 @@ async fn get_schedule() -> Vec<LiveGame> {
         Some((games, age)) if age < SCHEDULE_TTL => games,
         Some((games, _)) => {
             tokio::spawn(async {
-                let Ok(_guard) = REFRESHING.try_lock() else { return };
+                let Ok(_guard) = REFRESHING.try_lock() else {
+                    return;
+                };
                 if let Err(e) = refresh_schedule().await {
                     eprintln!("[live] background refresh failed: {e}");
                 }
@@ -140,7 +141,9 @@ pub fn spawn_refresher() {
             if idle {
                 continue;
             }
-            let Ok(_guard) = REFRESHING.try_lock() else { continue };
+            let Ok(_guard) = REFRESHING.try_lock() else {
+                continue;
+            };
             if let Err(e) = refresh_schedule().await {
                 eprintln!("[live] scheduled refresh failed: {e}");
             }
@@ -250,7 +253,10 @@ fn parse_index(html: &str, sport: &str) -> Vec<LiveGame> {
     let mut cursor = 0;
     while let Some(i) = html[cursor..].find(marker) {
         let start = cursor + i;
-        let end = html[start..].find("</li>").map(|e| start + e).unwrap_or(html.len());
+        let end = html[start..]
+            .find("</li>")
+            .map(|e| start + e)
+            .unwrap_or(html.len());
         let block = &html[start..end];
         cursor = end + 5;
 
@@ -540,10 +546,15 @@ fn extract_embed_iframe(html: &str) -> Option<String> {
     let mut pos = 0;
     while let Some(i) = html[pos..].find("<iframe") {
         let abs = pos + i;
-        let end = html[abs..].find('>').map(|e| abs + e + 1).unwrap_or(html.len());
+        let end = html[abs..]
+            .find('>')
+            .map(|e| abs + e + 1)
+            .unwrap_or(html.len());
         let tag = &html[abs..end];
         pos = end;
-        let Some(src) = tag_attr(tag, "src") else { continue };
+        let Some(src) = tag_attr(tag, "src") else {
+            continue;
+        };
         if !src.starts_with("http") {
             continue;
         }
@@ -723,7 +734,12 @@ async fn resolve_handler(
                 eprintln!("[livetv] resolved: master_host={}", host_of(&master));
                 let token = issue_token(master, referer).await;
                 let master_url = format!("/api/live/hls/{token}/master.m3u8");
-                Json(ResolveResp { token, master_url, youtube: None }).into_response()
+                Json(ResolveResp {
+                    token,
+                    master_url,
+                    youtube: None,
+                })
+                .into_response()
             }
             Err(e) if e.starts_with("youtube:") => {
                 let id = e.trim_start_matches("youtube:").to_string();
@@ -749,7 +765,11 @@ async fn resolve_handler(
         Ok(c) => c,
         Err(e) => {
             eprintln!("[live] resolve failed: {e}");
-            let msg = if e == "dead stream" { "dead stream" } else { "resolve failed" };
+            let msg = if e == "dead stream" {
+                "dead stream"
+            } else {
+                "resolve failed"
+            };
             return (StatusCode::BAD_GATEWAY, msg).into_response();
         }
     };
@@ -761,7 +781,12 @@ async fn resolve_handler(
     );
     let token = issue_token(chain.master_url, referer).await;
     let master_url = format!("/api/live/hls/{token}/master.m3u8");
-    Json(ResolveResp { token, master_url, youtube: None }).into_response()
+    Json(ResolveResp {
+        token,
+        master_url,
+        youtube: None,
+    })
+    .into_response()
 }
 
 async fn hls_master(Path(token): Path<String>) -> Response {
@@ -814,7 +839,10 @@ async fn hls_proxy(Path((token, hex)): Path<(String, String)>) -> Response {
     };
     if is_playlist_body(&body) {
         let text = String::from_utf8_lossy(&body);
-        let seg_count = text.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).count();
+        let seg_count = text
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .count();
         eprintln!(
             "[live] variant {} {} -> {} segs",
             status.as_u16(),
@@ -918,7 +946,10 @@ fn rewrite_playlist(text: &str, base_url: &str, token: &str) -> String {
             match line.find("URI=\"") {
                 Some(i) => {
                     let start = i + 5;
-                    let end = line[start..].find('"').map(|e| start + e).unwrap_or(line.len());
+                    let end = line[start..]
+                        .find('"')
+                        .map(|e| start + e)
+                        .unwrap_or(line.len());
                     out.push_str(&line[..start]);
                     out.push_str(&proxied(&line[start..end]));
                     out.push_str(&line[end..]);
@@ -1038,7 +1069,10 @@ mod tests {
         let t = r##"<iframe id='wp_player' src="https://e.net/a" data-src="https://nope/">"##;
         assert_eq!(tag_attr(t, "src").as_deref(), Some("https://e.net/a"));
         assert_eq!(tag_attr(t, "id").as_deref(), Some("wp_player"));
-        assert_eq!(tag_attr("<iframe src=https://e.net/b >", "src").as_deref(), Some("https://e.net/b"));
+        assert_eq!(
+            tag_attr("<iframe src=https://e.net/b >", "src").as_deref(),
+            Some("https://e.net/b")
+        );
     }
 
     #[test]
@@ -1072,7 +1106,8 @@ mod tests {
 
     #[test]
     fn loader_extractor_accepts_single_quotes() {
-        let html = "var loader = 'aHR0cHM6Ly9leGFtcGxlLm5ldC9wbGF5bGlzdC81NTg3OC9sb2FkLXBsYXlsaXN0';";
+        let html =
+            "var loader = 'aHR0cHM6Ly9leGFtcGxlLm5ldC9wbGF5bGlzdC81NTg3OC9sb2FkLXBsYXlsaXN0';";
         let got = extract_loader_b64(html).unwrap();
         assert!(got.starts_with("aHR0"));
         assert_eq!(
@@ -1117,7 +1152,10 @@ mod tests {
 
     #[test]
     fn numeric_entities_decode() {
-        assert_eq!(decode_entities("Dana White&#039;s &amp; Co"), "Dana White's & Co");
+        assert_eq!(
+            decode_entities("Dana White&#039;s &amp; Co"),
+            "Dana White's & Co"
+        );
         assert_eq!(decode_entities("a &#x; b"), "a &#x; b");
     }
 
@@ -1127,8 +1165,14 @@ mod tests {
             sport_from_href("https://x.test/premier-league/arsenal-spurs/99", "top"),
             "premier-league"
         );
-        assert_eq!(sport_from_href("https://x.test/cfb/lsu-clemson/1", "top"), "cfb");
-        assert_eq!(sport_from_href("https://x.test/stream/ufc/fight-night", "mma"), "mma");
+        assert_eq!(
+            sport_from_href("https://x.test/cfb/lsu-clemson/1", "top"),
+            "cfb"
+        );
+        assert_eq!(
+            sport_from_href("https://x.test/stream/ufc/fight-night", "mma"),
+            "mma"
+        );
         assert_eq!(sport_from_href("nonsense", "cfb"), "cfb");
     }
 
@@ -1159,7 +1203,10 @@ mod tests {
 
     #[test]
     fn index_sources_parses_pairs() {
-        std::env::set_var("LIVE_INDEX_URLS", "cfb=https://a.test/c, nfl = https://a.test/n ,junk");
+        std::env::set_var(
+            "LIVE_INDEX_URLS",
+            "cfb=https://a.test/c, nfl = https://a.test/n ,junk",
+        );
         let got = index_sources();
         std::env::remove_var("LIVE_INDEX_URLS");
         assert_eq!(
@@ -1183,8 +1230,14 @@ mod tests {
     fn playlist_rewrites_tag_uris() {
         let m = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",URI=\"96kbps/list.m3u8\",DEFAULT=YES\n#EXT-X-MAP:URI=\"/x/init.mp4\"\n#EXT-X-TARGETDURATION:3\n";
         let out = rewrite_playlist(m, "https://x.y/root/master.m3u8", "TOK");
-        assert!(out.contains(&format!("URI=\"/api/live/hls/TOK/p/{}\",DEFAULT=YES", hex_encode(b"https://x.y/root/96kbps/list.m3u8"))));
-        assert!(out.contains(&format!("#EXT-X-MAP:URI=\"/api/live/hls/TOK/p/{}\"", hex_encode(b"https://x.y/x/init.mp4"))));
+        assert!(out.contains(&format!(
+            "URI=\"/api/live/hls/TOK/p/{}\",DEFAULT=YES",
+            hex_encode(b"https://x.y/root/96kbps/list.m3u8")
+        )));
+        assert!(out.contains(&format!(
+            "#EXT-X-MAP:URI=\"/api/live/hls/TOK/p/{}\"",
+            hex_encode(b"https://x.y/x/init.mp4")
+        )));
         assert!(out.contains("#EXT-X-TARGETDURATION:3\n"));
     }
 

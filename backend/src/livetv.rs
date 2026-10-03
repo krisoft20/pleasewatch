@@ -41,9 +41,14 @@ fn client() -> reqwest::Client {
 }
 
 async fn fetch_page(url: &str) -> Result<String, String> {
-    let body = serde_json::json!({ "url": url, "gotoOptions": { "waitUntil": "domcontentloaded" } });
+    let body =
+        serde_json::json!({ "url": url, "gotoOptions": { "waitUntil": "domcontentloaded" } });
     let r = client()
-        .post(format!("{}/chromium/content?token={}", sniffer_url(), sniffer_token()))
+        .post(format!(
+            "{}/chromium/content?token={}",
+            sniffer_url(),
+            sniffer_token()
+        ))
         .json(&body)
         .send()
         .await
@@ -91,7 +96,11 @@ pub async fn sniff(webplayer_url: &str, wait_ms: u64) -> Result<String, String> 
         "context": { "url": webplayer_url, "waitMs": wait_ms }
     });
     let r = client()
-        .post(format!("{}/chromium/function?token={}", sniffer_url(), sniffer_token()))
+        .post(format!(
+            "{}/chromium/function?token={}",
+            sniffer_url(),
+            sniffer_token()
+        ))
         .json(&body)
         .send()
         .await
@@ -99,7 +108,11 @@ pub async fn sniff(webplayer_url: &str, wait_ms: u64) -> Result<String, String> 
     let status = r.status();
     let text = r.text().await.map_err(|e| format!("sniff read: {e}"))?;
     if !status.is_success() {
-        return Err(format!("sniff status {} {}", status.as_u16(), &text[..text.len().min(120)]));
+        return Err(format!(
+            "sniff status {} {}",
+            status.as_u16(),
+            &text[..text.len().min(120)]
+        ));
     }
     let out = serde_json::from_str::<SniffBody>(&text)
         .map_err(|e| format!("sniff parse: {e}"))?
@@ -183,7 +196,11 @@ fn normalize_sport(raw: &str) -> String {
 }
 
 fn sport_and_league(alt: &str) -> (String, String) {
-    let parts: Vec<&str> = alt.split('.').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+    let parts: Vec<&str> = alt
+        .split('.')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
     let sport = parts
         .first()
         .map(|s| normalize_sport(s))
@@ -220,7 +237,9 @@ pub fn parse_index(html: &str, terms: &[String]) -> Vec<LiveGame> {
             .rfind("alt=\"")
             .map(|a| {
                 let rest = &back[a + 5..];
-                rest.find('"').map(|e| rest[..e].to_string()).unwrap_or_default()
+                rest.find('"')
+                    .map(|e| rest[..e].to_string())
+                    .unwrap_or_default()
             })
             .unwrap_or_default();
         let (sport, league_from_alt) = sport_and_league(&decode_entities(&alt));
@@ -228,7 +247,11 @@ pub fn parse_index(html: &str, terms: &[String]) -> Vec<LiveGame> {
         let block = &after[qe..after.len().min(qe + 900)];
         let anchor_text = block
             .find('>')
-            .and_then(|s| block[s + 1..].find("</a>").map(|e| squeeze(&strip_tags(&block[s + 1..s + 1 + e]))))
+            .and_then(|s| {
+                block[s + 1..]
+                    .find("</a>")
+                    .map(|e| squeeze(&strip_tags(&block[s + 1..s + 1 + e])))
+            })
             .unwrap_or_default();
         let evdesc = block
             .find("class=\"evdesc\">")
@@ -252,7 +275,11 @@ pub fn parse_index(html: &str, terms: &[String]) -> Vec<LiveGame> {
             }
         }
 
-        let slug = path.split_once('_').map(|(_, s)| s).unwrap_or("").trim_matches('/');
+        let slug = path
+            .split_once('_')
+            .map(|(_, s)| s)
+            .unwrap_or("")
+            .trim_matches('/');
         let (mut away, mut home) = teams_from_slug(slug);
         if let Some((a, b)) = anchor_text.split_once('-') {
             let (a, b) = (a.trim(), b.trim());
@@ -262,7 +289,8 @@ pub fn parse_index(html: &str, terms: &[String]) -> Vec<LiveGame> {
             }
         }
 
-        let live = block.contains("class=\"live\"") || back.ends_with("class=\"live\" ")
+        let live = block.contains("class=\"live\"")
+            || back.ends_with("class=\"live\" ")
             || html[abs.saturating_sub(60)..abs].contains("class=\"live\"");
 
         let label = if away.is_empty() {
@@ -272,13 +300,20 @@ pub fn parse_index(html: &str, terms: &[String]) -> Vec<LiveGame> {
         };
 
         out.push(LiveGame {
-            id: format!("ltv-{}", path.split('_').next().unwrap_or(path).trim_matches('/')),
+            id: format!(
+                "ltv-{}",
+                path.split('_').next().unwrap_or(path).trim_matches('/')
+            ),
             sport,
             league,
             label,
             away,
             home,
-            status: if live { "live".into() } else { "scheduled".into() },
+            status: if live {
+                "live".into()
+            } else {
+                "scheduled".into()
+            },
             start_hint: if time.is_empty() { None } else { Some(time) },
             starts_in: None,
             source_url: full,
@@ -316,7 +351,10 @@ pub fn link_kinds(html: &str) -> std::collections::HashSet<String> {
         pos = abs + needle.len();
         let rest = &html[abs..html.len().min(abs + 60)];
         if let Some(t) = rest.split_once("t=") {
-            let kind: String = t.1.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+            let kind: String =
+                t.1.chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect();
             if !kind.is_empty() {
                 out.insert(kind.to_ascii_lowercase());
             }
@@ -333,7 +371,9 @@ pub fn parse_youtube_ids(html: &str) -> Vec<String> {
         let abs = pos + i;
         pos = abs + needle.len();
         let rest = &html[abs..html.len().min(abs + 200)];
-        let Some((_, after)) = rest.split_once("c=") else { continue };
+        let Some((_, after)) = rest.split_once("c=") else {
+            continue;
+        };
         let id: String = after
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
@@ -348,7 +388,11 @@ pub fn parse_youtube_ids(html: &str) -> Vec<String> {
 pub async fn fetch_index() -> Result<Vec<LiveGame>, String> {
     let html = fetch_page(&index_url()).await?;
     let games = parse_index(&html, &filter_terms());
-    eprintln!("[livetv] index: {} bytes -> {} games", html.len(), games.len());
+    eprintln!(
+        "[livetv] index: {} bytes -> {} games",
+        html.len(),
+        games.len()
+    );
     Ok(games)
 }
 
@@ -392,7 +436,11 @@ pub async fn resolve(event_url: &str) -> Result<(String, String), String> {
             }
         }
     }
-    Err(if last == "no playlist" { "dead stream".into() } else { last })
+    Err(if last == "no playlist" {
+        "dead stream".into()
+    } else {
+        last
+    })
 }
 
 fn short(mirror: &str) -> String {
@@ -414,8 +462,14 @@ mod tests {
         assert_eq!(s, "soccer");
         assert_eq!(l, "Ekstraklasa");
         assert_eq!(sport_and_league("Ice Hockey. Sweden. SHL").0, "hockey");
-        assert_eq!(sport_and_league("American Football. USA. NFL").0, "football");
-        assert_eq!(sport_and_league("Handball. Germany. Bundesliga").0, "handball");
+        assert_eq!(
+            sport_and_league("American Football. USA. NFL").0,
+            "football"
+        );
+        assert_eq!(
+            sport_and_league("Handball. Germany. Bundesliga").0,
+            "handball"
+        );
     }
 
     #[test]
@@ -449,7 +503,9 @@ mod tests {
         let all = parse_index(FIXTURE, &[]);
         let nl = parse_index(FIXTURE, &["netherlands".to_string()]);
         assert!(nl.len() < all.len(), "filter did not narrow anything");
-        assert!(nl.iter().all(|g| g.source_url.contains("telstar") || g.league.contains("Eredivisie")));
+        assert!(nl
+            .iter()
+            .all(|g| g.source_url.contains("telstar") || g.league.contains("Eredivisie")));
     }
 
     #[test]
@@ -457,7 +513,9 @@ mod tests {
         let wrapped = r##"{"data":{"found":true,"hits":[{"url":"https://x/a.m3u8"}]},"type":"application/json"}"##;
         let bare = r##"{"found":true,"hits":[{"url":"https://x/b.m3u8"}]}"##;
         for (raw, want) in [(wrapped, "https://x/a.m3u8"), (bare, "https://x/b.m3u8")] {
-            let out = serde_json::from_str::<SniffBody>(raw).expect("parse").into_out();
+            let out = serde_json::from_str::<SniffBody>(raw)
+                .expect("parse")
+                .into_out();
             assert!(out.found);
             assert_eq!(out.hits[0].url, want);
         }
@@ -469,7 +527,10 @@ mod tests {
                        <a href="/webplayer2.php?t=youtube&amp;c=Pys12Z5Z4G8&amp;lang=en">dup</a>
                        <a href="/webplayer2.php?t=acestream&amp;c=deadbeefdeadbeef">ace</a>"##;
         assert_eq!(parse_youtube_ids(html), vec!["Pys12Z5Z4G8".to_string()]);
-        assert!(parse_youtube_ids(r##"<a href="/webplayer2.php?t=acestream&c=deadbeef">x</a>"##).is_empty());
+        assert!(
+            parse_youtube_ids(r##"<a href="/webplayer2.php?t=acestream&c=deadbeef">x</a>"##)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -480,7 +541,10 @@ mod tests {
         assert!(k.contains("youtube"));
         assert!(k.contains("acestream"));
         assert!(!k.contains("ifr"));
-        assert!(parse_mirrors(html).is_empty(), "youtube is not a sniffable mirror");
+        assert!(
+            parse_mirrors(html).is_empty(),
+            "youtube is not a sniffable mirror"
+        );
     }
 
     #[test]
@@ -495,4 +559,3 @@ mod tests {
         assert!(m.iter().all(|u| !u.contains("acestream")));
     }
 }
-
