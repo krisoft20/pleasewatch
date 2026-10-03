@@ -3022,7 +3022,7 @@ fn decode_entities(s: &str) -> String {
         .replace("&nbsp;", " ")
 }
 
-fn parse_size(s: &str) -> Option<i64> {
+pub(crate) fn parse_size(s: &str) -> Option<i64> {
     let s = s.trim();
     if s.is_empty() {
         return None;

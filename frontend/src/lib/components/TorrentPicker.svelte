@@ -104,8 +104,9 @@
     let formQbitPass = $state('');
     let savingQbit = $state(false);
     let starting = $state<string | null>(null);
-    let aggFilter = $state<'all' | 'jackett' | 'prowlarr'>('all');
-    type TorrentSource = 'jackett' | 'prowlarr';
+    type TorrentSource = 'jackett' | 'prowlarr' | 'ext';
+    const allSources: TorrentSource[] = ['jackett', 'prowlarr', 'ext'];
+    let aggFilter = $state<'all' | TorrentSource>('all');
     let searching = $state<TorrentSource[]>([]);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let searchAbort: AbortController | undefined;
@@ -182,7 +183,9 @@
         const merged = new Map(results.map((item) => [item.magnet, item]));
         for (const item of found) {
             const old = merged.get(item.magnet);
-            if (!old || (item.pref_score ?? 0) > (old.pref_score ?? 0) || item.seeds > old.seeds) {
+            const oldScore = old?.pref_score ?? 0;
+            const nextScore = item.pref_score ?? 0;
+            if (!old || nextScore > oldScore || (nextScore === oldScore && item.seeds > old.seeds)) {
                 merged.set(item.magnet, item);
             }
         }
@@ -203,7 +206,7 @@
         err = '';
         results = [];
         aggFilter = 'all';
-        const sources: TorrentSource[] = ['jackett', 'prowlarr'];
+        const sources = allSources.filter((s) => s !== 'ext' || kind !== 'book');
         searching = [...sources];
         const finalQ = (q + langSuffix(lang)).trim();
         const errors: string[] = [];
@@ -585,22 +588,20 @@
         </div>
 
         {#if !envErr && !loading && results.length > 0}
-            {@const jCount = results.filter((r) => r.aggregator === 'jackett').length}
-            {@const pCount = results.filter((r) => r.aggregator === 'prowlarr').length}
+            {@const aggCounts = allSources
+                .map((s) => [s, results.filter((r) => r.aggregator === s).length] as const)
+                .filter(([, n]) => n > 0)}
             <footer class="pw-tp-foot">
                 <span>
                     {results.length} results
                     {#if searching.length > 0}<span class="pw-tp-more">checking {searching.join(' + ')}...</span>{/if}
                 </span>
-                {#if jCount > 0 && pCount > 0}
+                {#if aggCounts.length > 1}
                     <div class="pw-tp-agg-tabs">
                         <button class:on={aggFilter === 'all'} onclick={() => (aggFilter = 'all')}>all</button>
-                        <button class:on={aggFilter === 'jackett'} onclick={() => (aggFilter = 'jackett')}
-                            >jackett ({jCount})</button
-                        >
-                        <button class:on={aggFilter === 'prowlarr'} onclick={() => (aggFilter = 'prowlarr')}
-                            >prowlarr ({pCount})</button
-                        >
+                        {#each aggCounts as [s, n] (s)}
+                            <button class:on={aggFilter === s} onclick={() => (aggFilter = s)}>{s} ({n})</button>
+                        {/each}
                     </div>
                 {/if}
                 <button class="pw-tp-close" onclick={onClose}>close</button>
@@ -864,6 +865,10 @@
     .pw-tp-agg-prowlarr {
         color: oklch(0.82 0.14 175);
         background: color-mix(in oklch, oklch(0.65 0.16 175) 22%, transparent);
+    }
+    .pw-tp-agg-ext {
+        color: oklch(0.82 0.14 300);
+        background: color-mix(in oklch, oklch(0.65 0.16 300) 22%, transparent);
     }
 
     .pw-tp-agg-tabs {

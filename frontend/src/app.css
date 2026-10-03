@@ -1289,6 +1289,39 @@ input {
     letter-spacing: 0.04em;
     font-size: 9.5px;
 }
+
+.pw-live-hits {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+}
+.pw-live-crest {
+    width: 48px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+}
+.pw-live-crest img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 2px rgba(255, 255, 255, 0.45));
+}
+.pw-live-abbr {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.pw-search-result-kind.pw-live-kind {
+    background: rgba(226, 74, 58, 0.16);
+    color: oklch(0.84 0.15 28);
+}
 .pw-search-result-rating {
     color: oklch(0.85 0.13 80);
 }

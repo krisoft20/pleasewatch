@@ -23,7 +23,8 @@
         "format:check": "prettier --check ."
     },
     "dependencies": {
-        "epubjs": "^0.3.93"
+        "epubjs": "^0.3.93",
+        "hls.js": "^1.7.2"
     },
     "overrides": {
         "@xmldom/xmldom": "^0.9.10"

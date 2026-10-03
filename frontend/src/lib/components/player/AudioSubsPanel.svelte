@@ -33,6 +33,7 @@
         audioTracks,
         selectedAudioIndex,
         selectedSubIndex,
+        secondSubIndex,
         subtitles,
         partyMode,
         syncErr,
@@ -53,6 +54,7 @@
         onClose,
         onSelectAudio,
         onSelectSubtitle,
+        onSelectSecondSubtitle,
         onRunSync,
         onDeleteSubtitle,
         onSearch,
@@ -65,6 +67,7 @@
         audioTracks: AudioTrack[];
         selectedAudioIndex: number;
         selectedSubIndex: number;
+        secondSubIndex: number;
         subtitles: MediaSubtitle[];
         partyMode: boolean;
         syncErr: string | null;
@@ -85,6 +88,7 @@
         onClose: () => void;
         onSelectAudio: (idx: number) => void;
         onSelectSubtitle: (idx: number) => void;
+        onSelectSecondSubtitle: (idx: number) => void;
         onRunSync: (subId: string) => void;
         onDeleteSubtitle: (subId: string, idx: number) => void;
         onSearch: () => void;
@@ -536,6 +540,15 @@
                 >
                 {#if selectedSubIndex === idx}<Icon name="check" class="w-5 h-5 text-primary-400 flex-shrink-0" />{/if}
             </button>
+            {#if selectedSubIndex !== idx}
+                <button
+                    onclick={() => onSelectSecondSubtitle(idx)}
+                    title={$t('player.second_subtitle')}
+                    aria-label={$t('player.second_subtitle')}
+                    class="pw-sub2 flex-shrink-0 mx-1"
+                    class:is-on={secondSubIndex === idx}>2</button
+                >
+            {/if}
             {#if !partyMode}
                 <button
                     onclick={() => onRunSync(sub.id)}
@@ -611,6 +624,17 @@
                     >{subLabel(sub, idx)}</span
                 >
             </button>
+            {#if selectedSubIndex !== idx}
+                <button
+                    onclick={() => onSelectSecondSubtitle(idx)}
+                    title={$t('player.second_subtitle')}
+                    aria-label={$t('player.second_subtitle')}
+                    class="pw-sub2 flex-shrink-0 mx-1 {secondSubIndex === idx
+                        ? ''
+                        : 'opacity-0 group-hover/sub:opacity-100'}"
+                    class:is-on={secondSubIndex === idx}>2</button
+                >
+            {/if}
             {#if !partyMode}
                 <button
                     onclick={() => onRunSync(sub.id)}
@@ -831,3 +855,30 @@
         </div>
     </div>
 {/if}
+
+<style>
+    .pw-sub2 {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        border: 1.5px solid rgba(255, 255, 255, 0.18);
+        color: rgba(255, 255, 255, 0.45);
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        transition:
+            color 0.15s,
+            border-color 0.15s,
+            background 0.15s,
+            opacity 0.15s;
+    }
+    .pw-sub2:hover {
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.45);
+    }
+    .pw-sub2.is-on {
+        color: #fff;
+        border-color: transparent;
+        background: var(--color-primary-500, #6366f1);
+    }
+</style>

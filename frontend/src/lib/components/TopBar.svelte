@@ -1,10 +1,11 @@
 <script lang="ts">
     import { tick } from 'svelte';
     import { goto, preloadData } from '$app/navigation';
-    import { api, type BookHit, type MangaHit, type TmdbSearchItem, type User } from '$lib/api';
+    import { api, type BookHit, type LiveGame, type MangaHit, type TmdbSearchItem, type User } from '$lib/api';
     import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
     import { t } from '$lib/i18n.svelte';
     import { category, CATEGORIES, type Category } from '$lib/category.svelte';
+    import { abbrOf, darkLogo, ink, livePick, pairColors } from '$lib/live.svelte';
     import { clickOutside } from '$lib/dismiss';
     import UserMenu from '$lib/components/UserMenu.svelte';
 
@@ -44,6 +45,8 @@
 
     let q = $state('');
     let searchResults = $state<TmdbSearchItem[]>([]);
+    let liveHits = $state<LiveGame[]>([]);
+    let liveCache: { at: number; games: LiveGame[] } | null = null;
     let mangaHits = $state<MangaHit[]>([]);
     let bookHits = $state<BookHit[]>([]);
     let searchOpen = $state(false);
@@ -81,9 +84,54 @@
         timer = setTimeout(runSearch, 250);
     }
 
+    async function liveSearch(query: string): Promise<LiveGame[]> {
+        const now = Date.now();
+        if (!liveCache || now - liveCache.at > 120000) {
+            try {
+                liveCache = { at: now, games: (await api.liveSchedule()).games };
+            } catch {
+                return [];
+            }
+        }
+        const needle = query.trim().toLowerCase();
+        if (needle.length < 2) return [];
+        return liveCache.games
+            .filter((g) =>
+                [g.label, g.away, g.home, g.league, g.espn?.away.name, g.espn?.home.name]
+                    .filter(Boolean)
+                    .some((f) => f!.toLowerCase().includes(needle))
+            )
+            .sort((a, b) => {
+                const rank = (g: LiveGame) => (g.status === 'live' ? 0 : 1);
+                return rank(a) - rank(b) || (a.starts_in ?? 1e9) - (b.starts_in ?? 1e9);
+            })
+            .slice(0, 5);
+    }
+
+    function liveView(g: LiveGame) {
+        const [fa, fb] = pairColors(g.away || g.label, g.home || g.label);
+        return {
+            a: {
+                logo: g.espn?.away.logo ?? null,
+                color: g.espn?.away.color || fa,
+                abbr: g.espn?.away.abbr || abbrOf(g.away || g.label)
+            },
+            live: (g.espn?.state || (g.status === 'live' ? 'in' : 'pre')) === 'in',
+            meta: [g.espn?.detail, g.espn?.network].filter(Boolean).join(' - ')
+        };
+    }
+
+    function pickLive(g: LiveGame) {
+        closeSearch();
+        livePick.id = g.id;
+        category.set('live');
+        goto('/');
+    }
+
     async function runSearch() {
         searchBusy = true;
         try {
+            liveSearch(q).then((hits) => (liveHits = hits));
             if (category.current === 'manga') {
                 mangaHits = await api.mangaSearch(q);
                 searchResults = [];
@@ -135,11 +183,13 @@
         searchResults = [];
         mangaHits = [];
         bookHits = [];
+        liveHits = [];
         searchOpen = false;
     }
 
     function closeSearch() {
         searchOpen = false;
+        liveHits = [];
         q = '';
         searchResults = [];
         mangaHits = [];
@@ -268,6 +318,38 @@
                                 points="2 17 12 22 22 17"
                             /><polyline points="2 12 12 17 22 12" /></svg
                         >
+                    {:else if category.current === 'live'}
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            ><path d="M5 8a9 9 0 0 1 14 0" /><path d="M8 11a5 5 0 0 1 8 0" /><circle
+                                cx="12"
+                                cy="15"
+                                r="1.6"
+                                fill="currentColor"
+                                stroke="none"
+                            /><path d="M12 17v4" /></svg
+                        >
+                    {:else if category.current === 'tv'}
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            ><rect x="2" y="7" width="20" height="14" rx="2.5" /><polyline
+                                points="17 2 12 7 7 2"
+                            /></svg
+                        >
                     {:else}
                         <svg
                             width="16"
@@ -362,6 +444,50 @@
                                             points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"
                                         /></svg
                                     >
+                                {:else if t.key === 'live'}
+                                    <svg
+                                        width="16"
+                                        height="16"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        ><path d="M4.93 19.07a10 10 0 0 1 0-14.14" /><path
+                                            d="M19.07 4.93a10 10 0 0 1 0 14.14"
+                                        /><path d="M7.76 16.24a6 6 0 0 1 0-8.48" /><path
+                                            d="M16.24 7.76a6 6 0 0 1 0 8.48"
+                                        /><circle cx="12" cy="12" r="2" /></svg
+                                    >
+                                {:else if t.key === 'teams'}
+                                    <svg
+                                        width="16"
+                                        height="16"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        ><path
+                                            d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"
+                                        /></svg
+                                    >
+                                {:else if t.key === 'schedule'}
+                                    <svg
+                                        width="16"
+                                        height="16"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        ><rect x="3" y="5" width="18" height="16" rx="2" /><path
+                                            d="M3 10h18M8 3v4M16 3v4"
+                                        /></svg
+                                    >
                                 {/if}
                             </span>
                             <span class="pw-tab-label">{t.label}</span>
@@ -434,12 +560,44 @@
 
             {#if searchOpen && q.trim().length >= 2}
                 <div class="pw-search-results">
+                    {#if liveHits.length > 0}
+                        <div class="pw-live-hits">
+                            {#each liveHits as g (g.id)}
+                                {@const lv = liveView(g)}
+                                <button class="pw-search-result" onclick={() => pickLive(g)}>
+                                    <span class="pw-live-crest">
+                                        {#if lv.a.logo}
+                                            <img src={darkLogo(lv.a.logo)} alt="" loading="lazy" />
+                                        {:else}
+                                            <span
+                                                class="pw-live-abbr"
+                                                style="background:{lv.a.color};color:{ink(lv.a.color)}"
+                                                >{lv.a.abbr}</span
+                                            >
+                                        {/if}
+                                    </span>
+                                    <div class="pw-search-result-info">
+                                        <p class="pw-search-result-title">{g.label}</p>
+                                        {#if lv.meta}<p class="pw-search-result-desc">{lv.meta}</p>{/if}
+                                        <div class="pw-search-result-tags">
+                                            <span class="pw-search-result-kind" class:pw-live-kind={lv.live}
+                                                >{lv.live ? t('live.status.live') : t('live.status.scheduled')}</span
+                                            >
+                                            <span class="pw-search-result-year">{g.league}</span>
+                                        </div>
+                                    </div>
+                                </button>
+                            {/each}
+                        </div>
+                    {/if}
                     {#if searchBusy && searchResults.length === 0 && mangaHits.length === 0 && bookHits.length === 0}
                         <div class="pw-search-empty">
                             <div class="pw-search-spin"></div>
                         </div>
                     {:else if searchResults.length === 0 && mangaHits.length === 0 && bookHits.length === 0}
-                        <div class="pw-search-empty">no results for "{q}"</div>
+                        {#if liveHits.length === 0}
+                            <div class="pw-search-empty">no results for "{q}"</div>
+                        {/if}
                     {:else if mangaHits.length > 0}
                         {#each mangaHits.slice(0, 8) as r (r.md_id)}
                             <button

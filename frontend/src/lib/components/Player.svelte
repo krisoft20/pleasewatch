@@ -1,11 +1,13 @@
 <script lang="ts">
-    import { onMount, onDestroy } from 'svelte';
+    import { onMount, onDestroy, tick, untrack } from 'svelte';
     import { fly, fade } from 'svelte/transition';
+    import Hls from 'hls.js';
     import type { MediaSubtitle, EpisodeRecord, TmdbEpisode } from '$lib/types';
     import { api } from '$lib/api';
     import EpisodeDrawer from './player/EpisodeDrawer.svelte';
     import AudioSubsPanel from './player/AudioSubsPanel.svelte';
     import PlayerSettingsPanel from './player/PlayerSettingsPanel.svelte';
+    import LiveSourcePanel from './player/LiveSourcePanel.svelte';
     import ClipPanel from './player/ClipPanel.svelte';
     import WatchTogetherPanel from './player/WatchTogetherPanel.svelte';
     import NextEpisodeOverlay from './player/NextEpisodeOverlay.svelte';
@@ -53,7 +55,11 @@
         introEnd = null,
         creditsStart = null,
         tmdbId = null,
-        posterUrl = null
+        posterUrl = null,
+        onStreamError = null,
+        live = false,
+        sourceName = '',
+        sourceMirrors = false
     }: {
         src: string;
         mediaId?: string;
@@ -78,6 +84,10 @@
         introStart?: number | null;
         introEnd?: number | null;
         creditsStart?: number | null;
+        onStreamError?: (() => void) | null;
+        sourceName?: string;
+        sourceMirrors?: boolean;
+        live?: boolean;
         tmdbId?: number | null;
         posterUrl?: string | null;
     } = $props();
@@ -101,6 +111,9 @@
     let showEpisodeDrawer = $state(false);
     let showSubtitlePicker = $state(false);
     let showSettings = $state(false);
+    let showSource = $state(false);
+    let levels = $state<{ i: number; label: string; meta: string }[]>([]);
+    let activeLevel = $state(-1);
     let showVolume = $state(false);
     let selectedSubIndex = $state(-1);
     let audioTracks = $state<{ id: string; label: string; language: string; codec?: string }[]>([]);
@@ -529,6 +542,7 @@
         document.body.style.overflow = prevBodyOverflow;
         document.documentElement.style.scrollbarGutter = prevHtmlGutter;
 
+        teardownHls();
         stopWatchTicks();
         clearInterval(progressInterval);
         clearInterval(nextCountdownTimer);
@@ -556,8 +570,23 @@
         }
         leaveSession();
     });
+    let hls: Hls | null = null;
+    function teardownHls() {
+        hls?.destroy();
+        hls = null;
+    }
+    function isHls(u: string) {
+        return u.includes('.m3u8') || u.startsWith('/api/live/hls/');
+    }
+
     async function loadStream() {
         if (!videoEl) return;
+        teardownHls();
+        if (isHls(src)) {
+            attachHls(videoEl, src);
+            srcSwitching = false;
+            return;
+        }
         const frag = resumePosition > 0 ? `#t=${Math.floor(resumePosition)}` : '';
         selectedAudioIndex = 0;
         videoEl.src = src + frag;
@@ -568,6 +597,69 @@
             selectedAudioIndex = idx;
             videoEl.src = `${src}?audio=${idx}${frag}`;
         }
+    }
+
+    function pickLevel(i: number) {
+        if (!hls) return;
+        hls.currentLevel = i;
+        activeLevel = i;
+    }
+
+    function jumpToLive() {
+        if (!live || !videoEl) return;
+        const el = videoEl;
+        const edge = hls?.liveSyncPosition ?? (el.seekable.length ? el.seekable.end(el.seekable.length - 1) : NaN);
+        if (Number.isFinite(edge) && edge - el.currentTime > 2) el.currentTime = edge;
+    }
+
+    function attachHls(el: HTMLVideoElement, url: string) {
+        if (!Hls.isSupported()) {
+            el.src = url;
+            el.play().catch(() => {});
+            return;
+        }
+        const h = new Hls({
+            lowLatencyMode: false,
+            liveSyncDurationCount: 2,
+            manifestLoadingTimeOut: 15000,
+            fragLoadingMaxRetry: 6,
+            levelLoadingMaxRetry: 6,
+            manifestLoadingMaxRetry: 4
+        });
+        hls = h;
+        levels = [];
+        activeLevel = -1;
+        h.on(Hls.Events.MANIFEST_PARSED, () => {
+            levels = h.levels.map((l, i) => ({
+                i,
+                label: l.height ? `${l.height}p` : `${Math.round((l.bitrate ?? 0) / 1000)}k`,
+                meta: l.bitrate ? `${(l.bitrate / 1e6).toFixed(1)} Mbps` : ''
+            }));
+        });
+        h.on(Hls.Events.LEVEL_SWITCHED, (_, d) => {
+            activeLevel = h.autoLevelEnabled ? -1 : d.level;
+        });
+        let netRetries = 0;
+        let backoff: ReturnType<typeof setTimeout> | null = null;
+        h.on(Hls.Events.FRAG_BUFFERED, () => {
+            netRetries = 0;
+        });
+        h.on(Hls.Events.ERROR, (_, data) => {
+            if (!data.fatal) return;
+            console.warn('[player] fatal hls error', data.type, data.details);
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                if (++netRetries > 6) {
+                    onStreamError?.();
+                    return;
+                }
+                if (backoff) clearTimeout(backoff);
+                backoff = setTimeout(() => h.startLoad(), Math.min(800 * netRetries, 4000));
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) h.recoverMediaError();
+            else onStreamError?.();
+        });
+        h.loadSource(url);
+        h.attachMedia(el);
+        el.play().catch(() => {});
     }
 
     async function pickInitialAudioIndex(): Promise<number> {
@@ -642,6 +734,32 @@
     $effect(() => {
         src;
         didAutoSelectSubs = false;
+        didRestoreSecond = false;
+    });
+
+    let didRestoreSecond = false;
+    $effect(() => {
+        if (!didAutoSelectSubs || didRestoreSecond || subtitles.length === 0 || !videoEl) return;
+        didRestoreSecond = true;
+        const label = localStorage.getItem('player-sub2-label');
+        if (!label || label === '__off__') return;
+        untrack(() => {
+            const idx = subtitles.findIndex((s) => s.label === label);
+            if (idx >= 0 && idx !== selectedSubIndex) selectSecondSubtitle(idx);
+        });
+    });
+
+    $effect(() => {
+        subCacheBust;
+        const i = untrack(() => secondSubIndex);
+        if (i < 0) return;
+        tick().then(() => {
+            const track = currentSubTrack(i);
+            if (track && i === secondSubIndex) {
+                track.mode = 'hidden';
+                track.oncuechange = updateSecondCues;
+            }
+        });
     });
 
     function onTimeUpdate() {
@@ -858,6 +976,9 @@
         try {
             await api.deleteSubtitle(mediaId, subId);
             subtitles = subtitles.filter((s) => s.id !== subId);
+            if (secondSubIndex === index) {
+                selectSecondSubtitle(index);
+            } else if (secondSubIndex > index) secondSubIndex--;
             if (selectedSubIndex === index) {
                 selectSubtitle(-1);
                 subCacheBust++;
@@ -1096,6 +1217,7 @@
         }
     }
     function onSeekBarMouseDown(e: MouseEvent) {
+        if (live) return;
         seeking = true;
         updateSeekFromMouse(e);
         window.addEventListener('mousemove', onSeekBarMouseMove);
@@ -1119,7 +1241,7 @@
     }
 
     function onSeekBarHover(e: MouseEvent) {
-        if (!seekTrackEl || !seekBarEl || !controlsVisible) return;
+        if (live || !seekTrackEl || !seekBarEl || !controlsVisible) return;
         const trackRect = seekTrackEl.getBoundingClientRect();
         const barRect = seekBarEl.getBoundingClientRect();
         const ratio = Math.max(0, Math.min(1, (e.clientX - trackRect.left) / trackRect.width));
@@ -1260,24 +1382,30 @@
         return videoEl.querySelectorAll('track')[index]?.track ?? null;
     }
 
-    function updateActiveCues() {
-        if (!videoEl || selectedSubIndex < 0) {
-            activeCueLines = [];
-            return;
-        }
-        const track = currentSubTrack();
-        if (!track || !track.activeCues || track.activeCues.length === 0) {
-            activeCueLines = [];
-            return;
-        }
+    const WORD_RE = /\p{L}+(?:'\p{L}+)*/gu;
+
+    function wrapWords(html: string): string {
+        return html
+            .split(/(<[^>]+>|&[#a-z0-9]+;)/i)
+            .map((part, i) =>
+                i % 2 === 1
+                    ? part
+                    : part.replace(WORD_RE, (w) => `<span class="w" data-w="${w.toLowerCase()}">${w}</span>`)
+            )
+            .join('');
+    }
+
+    function cueLinesOf(cues: TextTrackCueList | VTTCue[] | null | undefined): string[] {
+        if (!cues || cues.length === 0) return [];
+        const wrap = secondSubIndex >= 0;
         const items: string[] = [];
-        for (let i = 0; i < track.activeCues.length; i++) {
-            const cue = track.activeCues[i] as VTTCue;
+        for (let i = 0; i < cues.length; i++) {
+            const cue = cues[i] as VTTCue;
             const lines = cue.text
                 .split(/\r?\n/)
                 .map((l) => l.trim())
                 .filter((l) => l.length > 0)
-                .map((l) => sanitizeCueLine(l));
+                .map((l) => (wrap ? wrapWords(sanitizeCueLine(l)) : sanitizeCueLine(l)));
             if (lines.length === 0) continue;
             if (subBgJoin) {
                 items.push(lines.join('<br>'));
@@ -1285,7 +1413,198 @@
                 for (const line of lines) items.push(line);
             }
         }
-        activeCueLines = items;
+        return items;
+    }
+
+    function plainOf(cues: TextTrackCueList | VTTCue[] | null | undefined): string {
+        if (!cues) return '';
+        let out = '';
+        for (let i = 0; i < cues.length; i++) out += ' ' + (cues[i] as VTTCue).text.replace(/<[^>]+>/g, '');
+        return out.replace(/\s+/g, ' ').trim();
+    }
+
+    let mainPlain = $state('');
+    let secondPlain = $state('');
+
+    function updateActiveCues() {
+        const cues = videoEl && selectedSubIndex >= 0 ? currentSubTrack()?.activeCues : null;
+        activeCueLines = cueLinesOf(cues);
+        mainPlain = plainOf(cues);
+        updateSecondCues();
+    }
+
+    let secondSubIndex = $state(-1);
+    let secondCueLines = $state<string[]>([]);
+    let secondCuePoller: ReturnType<typeof setInterval>;
+
+    function sameLine(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+        const overlap = Math.min(aEnd, bEnd) - Math.max(aStart, bStart);
+        return overlap > 0 && overlap >= 0.5 * Math.min(aEnd - aStart, bEnd - bStart);
+    }
+
+    function updateSecondCues() {
+        const second =
+            videoEl && secondSubIndex >= 0 && secondSubIndex !== selectedSubIndex
+                ? currentSubTrack(secondSubIndex)
+                : null;
+        if (!second?.cues) {
+            secondCueLines = [];
+            secondPlain = '';
+            return;
+        }
+        const main = selectedSubIndex >= 0 ? currentSubTrack() : null;
+        const active = main?.activeCues;
+        let from = Infinity;
+        let to = -Infinity;
+        for (let i = 0; active && i < active.length; i++) {
+            from = Math.min(from, active[i].startTime);
+            to = Math.max(to, active[i].endTime);
+        }
+        const picked: VTTCue[] = [];
+        if (to > from) {
+            for (let i = 0; i < second.cues.length; i++) {
+                const c = second.cues[i] as VTTCue;
+                if (c.startTime >= to) break;
+                if (sameLine(c.startTime, c.endTime, from, to)) picked.push(c);
+            }
+        } else if (second.activeCues) {
+            for (let i = 0; i < second.activeCues.length; i++) {
+                const c = second.activeCues[i] as VTTCue;
+                let orphan = true;
+                for (let j = 0; main?.cues && j < main.cues.length; j++) {
+                    const m = main.cues[j];
+                    if (m.startTime >= c.endTime) break;
+                    if (sameLine(c.startTime, c.endTime, m.startTime, m.endTime)) {
+                        orphan = false;
+                        break;
+                    }
+                }
+                if (orphan) picked.push(c);
+            }
+        }
+        secondCueLines = cueLinesOf(picked);
+        secondPlain = plainOf(picked);
+    }
+
+    const ALIGN_LANGS = /^(en|eng|english|pl|pol|polish|de|ger|deu|german)$/i;
+    const alignCache = new Map<string, [string, string][]>();
+    let alignPairs: [string, string][] = [];
+    let subsEl = $state<HTMLDivElement | null>(null);
+
+    $effect(() => {
+        const a = mainPlain;
+        const b = secondPlain;
+        const la = subtitles[selectedSubIndex]?.language ?? '';
+        const lb = subtitles[secondSubIndex]?.language ?? '';
+        alignPairs = [];
+        if (!a || !b || !ALIGN_LANGS.test(la) || !ALIGN_LANGS.test(lb)) return;
+        const key = `${la}|${lb}|${a}|${b}`;
+        const hit = alignCache.get(key);
+        if (hit) {
+            alignPairs = hit;
+            return;
+        }
+        if (alignCache.size > 400) alignCache.clear();
+        api.alignLines(la, lb, a, b)
+            .then((r) => {
+                alignCache.set(key, r.pairs);
+                if (mainPlain === a && secondPlain === b) alignPairs = r.pairs;
+            })
+            .catch(() => alignCache.set(key, []));
+    });
+
+    function clearWordHl() {
+        subsEl?.querySelectorAll('.is-hl').forEach((el) => el.classList.remove('is-hl'));
+    }
+
+    const TTS_LANG: Record<string, string> = {
+        en: 'en-US',
+        eng: 'en-US',
+        english: 'en-US',
+        pl: 'pl-PL',
+        pol: 'pl-PL',
+        polish: 'pl-PL',
+        de: 'de-DE',
+        ger: 'de-DE',
+        deu: 'de-DE',
+        german: 'de-DE',
+        es: 'es-ES',
+        spa: 'es-ES',
+        fr: 'fr-FR',
+        fre: 'fr-FR',
+        fra: 'fr-FR',
+        it: 'it-IT',
+        ita: 'it-IT',
+        pt: 'pt-PT',
+        por: 'pt-PT'
+    };
+    let ttsSeq = 0;
+
+    function speakWord(word: string, lang: string) {
+        if (typeof speechSynthesis === 'undefined') return;
+        const bcp = TTS_LANG[lang.toLowerCase()] ?? lang;
+        const u = new SpeechSynthesisUtterance(word);
+        u.lang = bcp;
+        const voice = speechSynthesis
+            .getVoices()
+            .find((v) => v.lang.replace('_', '-').toLowerCase().startsWith(bcp.slice(0, 2).toLowerCase()));
+        if (voice) u.voice = voice;
+        u.rate = 0.9;
+        const seq = ++ttsSeq;
+        if (videoEl) videoEl.volume = volume * 0.25;
+        u.onend = u.onerror = () => {
+            if (seq === ttsSeq && videoEl) videoEl.volume = volume;
+        };
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+    }
+
+    function onSubWord(e: Event) {
+        clearWordHl();
+        const el = (e.target as HTMLElement | null)?.closest?.('.w') as HTMLElement | null;
+        if (!el || !subsEl) return;
+        const w = el.dataset.w;
+        const fromSecond = !!el.closest('.custom-sub-second');
+        if (e.type === 'click') {
+            e.stopPropagation();
+            const lang = subtitles[fromSecond ? secondSubIndex : selectedSubIndex]?.language ?? '';
+            if (w) speakWord(w, lang);
+        }
+        const partners = alignPairs.filter((p) => p[fromSecond ? 1 : 0] === w).map((p) => p[fromSecond ? 0 : 1]);
+        if (partners.length === 0) return;
+        el.classList.add('is-hl');
+        subsEl.querySelectorAll<HTMLElement>('.w').forEach((span) => {
+            if (!!span.closest('.custom-sub-second') !== fromSecond && partners.includes(span.dataset.w ?? '')) {
+                span.classList.add('is-hl');
+            }
+        });
+    }
+
+    function selectSecondSubtitle(index: number) {
+        const prev = currentSubTrack(secondSubIndex);
+        if (prev && secondSubIndex !== selectedSubIndex) {
+            prev.mode = 'disabled';
+            prev.oncuechange = null;
+        }
+        clearInterval(secondCuePoller);
+        secondSubIndex = index === secondSubIndex || index === selectedSubIndex ? -1 : index;
+        const track = currentSubTrack(secondSubIndex);
+        if (track) {
+            track.mode = 'hidden';
+            track.oncuechange = updateSecondCues;
+            let attempts = 0;
+            const want = secondSubIndex;
+            secondCuePoller = setInterval(() => {
+                attempts++;
+                if (currentSubTrack(want)?.cues?.length || attempts > 50) {
+                    clearInterval(secondCuePoller);
+                    updateSecondCues();
+                }
+            }, 100);
+        }
+        updateSecondCues();
+        const label = secondSubIndex >= 0 ? subtitles[secondSubIndex]?.label : null;
+        localStorage.setItem('player-sub2-label', label ?? '__off__');
     }
 
     function sanitizeCueLine(line: string): string {
@@ -1298,6 +1617,7 @@
     function selectSubtitle(index: number) {
         selectedSubIndex = index;
         subtitleOffset = 0;
+        if (index >= 0 && index === secondSubIndex) secondSubIndex = -1;
         clearInterval(cueLoadPoller);
         if (videoEl) {
             for (let i = 0; i < videoEl.textTracks.length; i++) {
@@ -1309,6 +1629,11 @@
             if (track) {
                 track.mode = 'hidden';
                 track.oncuechange = updateActiveCues;
+            }
+            const second = currentSubTrack(secondSubIndex);
+            if (second) {
+                second.mode = 'hidden';
+                second.oncuechange = updateSecondCues;
             }
             updateActiveCues();
             if (index >= 0) {
@@ -1762,8 +2087,8 @@
 
     const releaseTags = $derived(parseReleaseTags(releaseName));
 
-    let progressPct = $derived(duration > 0 ? (currentTime / duration) * 100 : 0);
-    let bufferedPct = $derived(duration > 0 ? (buffered / duration) * 100 : 0);
+    let progressPct = $derived(live ? 100 : duration > 0 ? (currentTime / duration) * 100 : 0);
+    let bufferedPct = $derived(live ? 100 : duration > 0 ? (buffered / duration) * 100 : 0);
     let lastSrc = $state('');
     let seededSrc = $state(false);
     $effect(() => {
@@ -1781,11 +2106,14 @@
             introSkipped = false;
             audioTracksLoaded = false;
             selectedSubIndex = -1;
+            secondSubIndex = -1;
             subtitleOffset = 0;
             activeCueLines = [];
+            secondCueLines = [];
             subCacheBust++;
             clearInterval(nextCountdownTimer);
             clearInterval(cueLoadPoller);
+            clearInterval(secondCuePoller);
             for (let i = 0; i < videoEl.textTracks.length; i++) {
                 videoEl.textTracks[i].mode = 'disabled';
                 videoEl.textTracks[i].oncuechange = null;
@@ -1837,6 +2165,7 @@
         onended={onVideoEnded}
         onplay={() => {
             playing = true;
+            jumpToLive();
         }}
         onpause={() => {
             playing = false;
@@ -1923,12 +2252,25 @@
         onkeydown={onVideoAreaKeydown}
         onmousedown={onVideoAreaMouseDown}
     ></div>
-    {#if activeCueLines.length > 0}
+    {#if activeCueLines.length > 0 || secondCueLines.length > 0}
+        <!-- svelte-ignore a11y_mouse_events_have_key_events -->
         <div
+            bind:this={subsEl}
+            role="presentation"
+            onmouseover={onSubWord}
+            onmouseout={clearWordHl}
+            onclick={onSubWord}
             class="custom-subs sub-{subSize} sub-color-{subColor} sub-bg-{subBg} sub-bgc-{subBgColor} sub-bgo-{subBgOpacity} {controlsVisible
                 ? 'subs-up'
                 : ''}"
         >
+            {#if secondCueLines.length > 0}
+                <div class="custom-sub-second">
+                    {#each secondCueLines as line}
+                        <div class="custom-sub-line">{@html line}</div>
+                    {/each}
+                </div>
+            {/if}
             {#each activeCueLines as line}
                 <div class="custom-sub-line">{@html line}</div>
             {/each}
@@ -1997,9 +2339,7 @@
             </div>
         </div>
         <div class="sm:hidden mob-flex"></div>
-        <div
-            class="bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-4 sm:pt-20 pointer-events-auto"
-        >
+        <div class="bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-4 sm:pt-20 pointer-events-auto">
             <div
                 bind:this={seekBarEl}
                 class="px-4 sm:px-10 pb-1 sm:pb-2 group/seek cursor-pointer relative"
@@ -2008,7 +2348,7 @@
                 aria-valuemin="0"
                 aria-valuemax={Math.max(0, Math.floor(duration))}
                 aria-valuenow={Math.max(0, Math.floor(currentTime))}
-                aria-valuetext="{fmt(currentTime)} / {fmt(duration)}"
+                aria-valuetext={live ? 'live' : `${fmt(currentTime)} / ${fmt(duration)}`}
                 tabindex="0"
                 onmousedown={onSeekBarMouseDown}
                 onmousemove={onSeekBarHover}
@@ -2050,8 +2390,16 @@
                 </div>
             </div>
             <div class="flex justify-between items-center px-5 sm:hidden mob-flex">
-                <span class="text-white/50 text-[10px] font-mono">{fmt(currentTime)}</span>
-                <span class="text-white/30 text-[10px] font-mono">{fmt(duration)}</span>
+                {#if live}
+                    <span
+                        class="flex items-center gap-1.5 text-white/80 text-[10px] font-mono font-bold tracking-wider"
+                    >
+                        <span class="pw-live-dot"></span>LIVE
+                    </span>
+                {:else}
+                    <span class="text-white/50 text-[10px] font-mono">{fmt(currentTime)}</span>
+                    <span class="text-white/30 text-[10px] font-mono">{fmt(duration)}</span>
+                {/if}
             </div>
             <div class="hidden sm:flex desk-flex items-center gap-6 px-10 pb-5 pt-1">
                 <button onclick={togglePlay} class="text-white hover:text-gray-300 p-1.5">
@@ -2121,7 +2469,15 @@
                             >
                         </div>
                     </div>
-                    <span class="text-white text-sm font-mono tabular-nums">{fmt(currentTime)} / {fmt(duration)}</span>
+                    {#if live}
+                        <span class="flex items-center gap-1.5 text-white text-xs font-mono font-bold tracking-wider">
+                            <span class="pw-live-dot"></span>LIVE
+                        </span>
+                    {:else}
+                        <span class="text-white text-sm font-mono tabular-nums"
+                            >{fmt(currentTime)} / {fmt(duration)}</span
+                        >
+                    {/if}
                 </div>
                 <div class="flex-1"></div>
                 {#if $watchTogether.active}
@@ -2176,6 +2532,35 @@
                 >
                     <Icon name="subs" class="w-8 h-8" />
                 </button>
+                {#if live}
+                    <div class="pw-src-wrap">
+                        <button
+                            onclick={() => {
+                                showSource = !showSource;
+                                showSettings = false;
+                                showSubtitlePicker = false;
+                                resetControlsTimer();
+                            }}
+                            aria-label={$t('live.source')}
+                            class="p-2.5 -m-1 rounded-lg transition-all duration-200 {showSource
+                                ? 'text-primary-400 bg-primary-500/15 ring-1 ring-primary-400/30'
+                                : 'text-white hover:text-gray-300 hover:bg-white/5'}"
+                        >
+                            <svg
+                                width="28"
+                                height="28"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.7"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 10.2 3.9 3.9 0 0 0 6.5 19z" />
+                            </svg>
+                        </button>
+                    </div>
+                {/if}
                 <button
                     onclick={() => {
                         showSettings = !showSettings;
@@ -2309,6 +2694,7 @@
             {audioTracks}
             {selectedAudioIndex}
             {selectedSubIndex}
+            {secondSubIndex}
             {subtitles}
             {partyMode}
             {syncErr}
@@ -2331,6 +2717,7 @@
             }}
             onSelectAudio={selectAudio}
             onSelectSubtitle={selectSubtitle}
+            onSelectSecondSubtitle={selectSecondSubtitle}
             onRunSync={runSync}
             onDeleteSubtitle={deleteSubtitle}
             onSearch={searchSubDL}
@@ -2338,6 +2725,19 @@
             onAiTranslate={runAiTranslate}
             onUpload={doSubUpload}
             onOpenFile={() => subFileInput?.click()}
+        />
+    {/if}
+
+    {#if showSource}
+        <LiveSourcePanel
+            {isMobile}
+            sourceName={sourceName || 'Alpha'}
+            {sourceMirrors}
+            {levels}
+            {activeLevel}
+            onPickLevel={pickLevel}
+            onReconnect={() => onStreamError?.()}
+            onClose={() => (showSource = false)}
         />
     {/if}
 
@@ -2601,6 +3001,34 @@
             0.05em -0.05em 0 #000,
             -0.05em 0.05em 0 #000,
             0 0.08em 0.12em rgba(0, 0, 0, 0.7);
+    }
+    .custom-subs :global(.w) {
+        pointer-events: auto;
+        border-radius: 0.15em;
+        transition:
+            background-color 0.12s,
+            box-shadow 0.12s;
+    }
+    .custom-subs :global(.w.is-hl) {
+        background-color: rgba(255, 196, 0, 0.42);
+        box-shadow: 0 0 0 0.08em rgba(255, 196, 0, 0.42);
+    }
+    .custom-sub-second {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        margin-bottom: 0.35em;
+        opacity: 0.82;
+    }
+    .custom-subs.sub-small .custom-sub-second .custom-sub-line {
+        font-size: clamp(14px, 3vh, 36px);
+    }
+    .custom-subs.sub-medium .custom-sub-second .custom-sub-line {
+        font-size: clamp(17px, 3.6vh, 42px);
+    }
+    .custom-subs.sub-large .custom-sub-second .custom-sub-line {
+        font-size: clamp(22px, 4.6vh, 52px);
     }
     .custom-subs.sub-small .custom-sub-line {
         font-size: clamp(18px, 4vh, 48px);
@@ -2947,5 +3375,26 @@
     }
     :global(.layout-desktop) .mob-block {
         display: none !important;
+    }
+
+    .pw-src-wrap {
+        position: relative;
+    }
+    .pw-live-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: oklch(0.7 0.19 25);
+        animation: pw-live-pulse 1.8s ease-in-out infinite;
+        flex-shrink: 0;
+    }
+    @keyframes pw-live-pulse {
+        0%,
+        100% {
+            opacity: 0.4;
+        }
+        50% {
+            opacity: 1;
+        }
     }
 </style>

@@ -24,10 +24,12 @@
     import ContinueShelf from '$lib/components/ContinueShelf.svelte';
     import DiscoverHero from '$lib/components/DiscoverHero.svelte';
     import DiscoverBrowsePanel from '$lib/components/DiscoverBrowsePanel.svelte';
-    import DiscoverPreviewDrawer from '$lib/components/DiscoverPreviewDrawer.svelte';
     import TmdbShelf from '$lib/components/TmdbShelf.svelte';
     import MangaShelf from '$lib/components/MangaShelf.svelte';
     import BookShelf from '$lib/components/BookShelf.svelte';
+    import LiveShelf from '$lib/components/LiveShelf.svelte';
+    import TvShelf from '$lib/components/TvShelf.svelte';
+    import WhatsNew from '$lib/components/WhatsNew.svelte';
     import BookGreeting from '$lib/components/BookGreeting.svelte';
     import DailyQuote from '$lib/components/DailyQuote.svelte';
     import MyBooks from '$lib/components/MyBooks.svelte';
@@ -41,7 +43,6 @@
     let progress = $state<Record<string, number>>({});
     let discover = $state<DiscoverResponse | null>(null);
     let discoverLoading = $state(false);
-    let discoverPreview = $state<TmdbSearchItem | null>(null);
     let similarShelves = $state<{ title: string; items: TmdbSearchItem[] }[]>([]);
     let loading = $state(true);
 
@@ -227,8 +228,9 @@
         } catch {}
     }
 
-    function openDiscoverPreview(item: TmdbSearchItem) {
-        discoverPreview = item;
+    function openDiscoverItem(item: TmdbSearchItem) {
+        const route = item.media_type === 'tv' ? 'tv' : 'movie';
+        goto(`/${route}/${item.tmdb_id}`);
     }
 
     onMount(async () => {
@@ -334,7 +336,7 @@
     const isAdmin = $derived(user?.role === 'admin');
     const onRemove = $derived(isAdmin ? removeFromLibrary : undefined);
 
-    const recentlyAdded = $derived(media.slice(0, 16));
+    const recentlyAdded = $derived(media.slice(0, 30));
     const movies = $derived(media.filter((m) => m.media_type === 'movie'));
     const series = $derived(media.filter((m) => m.media_type === 'tv' && !m.is_anime));
     const animes = $derived(media.filter((m) => m.is_anime));
@@ -346,12 +348,23 @@
     const bookCompletedKeys = $derived(new Set(bookCompleted.map((book) => book.ol_key)));
 
     const cat = $derived(category.current);
+    const activeTab = $derived(cat === 'live' ? (tab === 'teams' || tab === 'schedule' ? tab : 'live') : tab);
 
-    const tabs = $derived([
-        { key: 'library', label: t('tab.library') },
-        { key: 'personal', label: t('tab.personal') },
-        { key: 'discover', label: t('tab.discover') }
-    ]);
+    const tabs = $derived(
+        cat === 'tv'
+            ? []
+            : cat === 'live'
+            ? [
+                  { key: 'live', label: t('live.tab.now') },
+                  { key: 'teams', label: t('live.tab.teams') },
+                  { key: 'schedule', label: t('live.tab.schedule') }
+              ]
+            : [
+                  { key: 'library', label: t('tab.library') },
+                  { key: 'personal', label: t('tab.personal') },
+                  { key: 'discover', label: t('tab.discover') }
+              ]
+    );
 </script>
 
 <svelte:head>
@@ -362,7 +375,8 @@
 
 {#if user}
     <div class="pw-page">
-        <TopBar {user} {tabs} activeTab={tab} onTab={setTab} />
+        <TopBar {user} {tabs} {activeTab} onTab={setTab} />
+        <WhatsNew />
 
         {#key `${cat}:${tab}`}
             <div in:fade={{ duration: 180, delay: 60 }} out:fade={{ duration: 100 }}>
@@ -432,6 +446,10 @@
                             </div>
                         {/if}
                     {/if}
+                {:else if cat === 'live'}
+                    <LiveShelf tab={activeTab} />
+                {:else if cat === 'tv'}
+                    <TvShelf />
                 {:else if cat === 'manga'}
                     {#if tab === 'library'}
                         {#if mangaLibLoading && !mangaLibLoaded}
@@ -523,7 +541,6 @@
                                 items={recentlyAdded}
                                 {onRemove}
                                 {progress}
-                                limit={8}
                                 showActivity
                             />
                             {#if movies.length > 0}<ShelfRow
@@ -560,35 +577,35 @@
                         </section>
                     {:else if discover}
                         <DiscoverHero items={discover.trending} />
-                        <DiscoverBrowsePanel onPreview={openDiscoverPreview} />
+                        <DiscoverBrowsePanel onOpen={openDiscoverItem} />
                         <div class="pw-section pw-section-tight">
                             <TmdbShelf
                                 title={t('discover.trending')}
                                 items={discover.trending}
-                                onPreview={openDiscoverPreview}
+                                onOpen={openDiscoverItem}
                             />
                             <TmdbShelf
                                 title={t('discover.popular_movies')}
                                 items={discover.popular_movies}
-                                onPreview={openDiscoverPreview}
+                                onOpen={openDiscoverItem}
                             />
                             <TmdbShelf
                                 title={t('discover.popular_tv')}
                                 items={discover.popular_tv}
-                                onPreview={openDiscoverPreview}
+                                onOpen={openDiscoverItem}
                             />
                             <TmdbShelf
                                 title={t('discover.top_rated_movies')}
                                 items={discover.top_rated_movies}
-                                onPreview={openDiscoverPreview}
+                                onOpen={openDiscoverItem}
                             />
                             <TmdbShelf
                                 title={t('discover.top_rated_tv')}
                                 items={discover.top_rated_tv}
-                                onPreview={openDiscoverPreview}
+                                onOpen={openDiscoverItem}
                             />
                             {#each similarShelves as shelf (shelf.title)}
-                                <TmdbShelf title={shelf.title} items={shelf.items} onPreview={openDiscoverPreview} />
+                                <TmdbShelf title={shelf.title} items={shelf.items} onOpen={openDiscoverItem} />
                             {/each}
                         </div>
                     {:else}
@@ -609,8 +626,5 @@
 
     {#if yirOpen}
         <YearInReview items={bookShelfItems} year={new Date().getFullYear()} onClose={() => (yirOpen = false)} />
-    {/if}
-    {#if discoverPreview}
-        <DiscoverPreviewDrawer item={discoverPreview} onClose={() => (discoverPreview = null)} />
     {/if}
 {/if}

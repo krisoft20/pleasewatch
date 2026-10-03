@@ -35,6 +35,7 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
 enum SearchSource {
     Jackett,
     Prowlarr,
+    Ext,
 }
 
 #[derive(Deserialize)]
@@ -59,13 +60,21 @@ async fn handle_search(
         );
     }
 
+    let ext = matches!(q.source, Some(SearchSource::Ext));
     match q.source {
         Some(SearchSource::Jackett) => prowlarr = None,
         Some(SearchSource::Prowlarr) => jackett = None,
+        Some(SearchSource::Ext) => {
+            jackett = None;
+            prowlarr = None;
+        }
         None => {}
     }
 
-    if jackett.is_none() && prowlarr.is_none() {
+    if ext && !crate::ext::enabled() {
+        return Json::<Vec<TorrentOption>>(Vec::new()).into_response();
+    }
+    if jackett.is_none() && prowlarr.is_none() && !ext {
         return Json::<Vec<TorrentOption>>(Vec::new()).into_response();
     }
 
@@ -110,7 +119,14 @@ async fn handle_search(
             Vec::new()
         }
     };
-    let (mut title_items, imdb_items) = tokio::join!(title_search, imdb_search);
+    let (mut title_items, imdb_items) = if ext {
+        match q.imdb.as_deref() {
+            Some(imdb) => (Vec::new(), crate::ext::search(&search_q, Some(imdb)).await),
+            None => (crate::ext::search(&search_q, None).await, Vec::new()),
+        }
+    } else {
+        tokio::join!(title_search, imdb_search)
+    };
 
     if is_book_kind && title_items.is_empty() && imdb_items.is_empty() {
         let tokens: Vec<&str> = q.q.split_whitespace().collect();
@@ -253,9 +269,9 @@ async fn handle_search(
     }
 
     let mut items: Vec<TorrentOption> = scored.into_iter().map(|(t, _)| t).collect();
-    items.truncate(120);
 
     if is_book {
+        items.truncate(120);
         return Json(items).into_response();
     }
 
@@ -308,6 +324,7 @@ async fn handle_search(
             _ => b.seeds.cmp(&a.seeds),
         }
     });
+    items.truncate(120);
 
     Json(items).into_response()
 }
@@ -430,12 +447,21 @@ async fn handle_list(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 async fn handle_create(
     Extension(auth): Extension<AuthUser>,
     State(state): State<Arc<AppState>>,
-    Json(body): Json<DownloadRequest>,
+    Json(mut body): Json<DownloadRequest>,
 ) -> impl IntoResponse {
     let qbit = state.qbit.lock().await.clone();
     let Some(qbit) = qbit else {
         return err(StatusCode::SERVICE_UNAVAILABLE, "qbit not configured");
     };
+    if body.magnet.starts_with("ext:") {
+        match crate::ext::resolve(&body.magnet).await {
+            Ok(m) => body.magnet = m,
+            Err(e) => {
+                crate::pe!("[ext] resolve {} failed: {e}", body.magnet);
+                return err(StatusCode::BAD_GATEWAY, &format!("ext.to: {e}"));
+            }
+        }
+    }
     if !body.magnet.starts_with("magnet:") && !body.magnet.starts_with("http") {
         return err(StatusCode::BAD_REQUEST, "invalid magnet or torrent url");
     }

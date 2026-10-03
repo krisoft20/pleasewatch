@@ -80,6 +80,20 @@ services:
       - TZ=${TZ:-UTC}
     restart: unless-stopped
 
+  # headless chromium used to sniff livetv mirrors. the playlists it finds are
+  # bound to the requesting IP, so this has to sit next to the proxy that will
+  # serve them - same host, same egress.
+  sniffer:
+    image: ghcr.io/browserless/chromium:latest
+    networks: [pwnet]
+    environment:
+      - TOKEN=${SNIFFER_TOKEN:-}
+      - CONCURRENT=${SNIFFER_CONCURRENT:-3}
+      - TIMEOUT=${SNIFFER_TIMEOUT:-60000}
+      - TZ=${TZ:-UTC}
+    shm_size: 1gb
+    restart: unless-stopped
+
   pleasewatch:
     image: ${PW_RUNTIME_IMAGE:-pleasewatch-runtime:latest}
     networks: [pwnet]
@@ -87,6 +101,7 @@ services:
       - jackett
       - prowlarr
       - qbittorrent
+      - sniffer
     volumes:
       - ./pw-data:/opt/pleasewatch/data
       - ${PW_MEDIA_DIR:-./media}:/media
@@ -112,6 +127,14 @@ services:
       - QBIT_USER=${QBIT_USER:-admin}
       - QBIT_PASS=${QBIT_PASS:-}
       - MANGA_CK_PROXY=http://gluetun:8888
+      - LIVE_INDEX_URLS=${LIVE_INDEX_URLS:-}
+      - LIVE_ALLOWED_ORIGINS=${LIVE_ALLOWED_ORIGINS:-}
+      - SNIFFER_URL=http://sniffer:3000
+      - SNIFFER_TOKEN=${SNIFFER_TOKEN:-}
+      - LIVETV_INDEX_URL=${LIVETV_INDEX_URL:-https://livetv.sx/enx/}
+      - LIVETV_FILTER=${LIVETV_FILTER:-}
+      - LIVETV_ENABLED=${LIVETV_ENABLED:-1}
+      - LIVE_REFRESH_SECS=${LIVE_REFRESH_SECS:-60}
     restart: unless-stopped
 
   caddy:

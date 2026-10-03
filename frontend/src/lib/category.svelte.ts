@@ -1,6 +1,6 @@
-export type Category = 'video' | 'manga' | 'books';
+export type Category = 'video' | 'manga' | 'books' | 'live' | 'tv';
 
-export const CATEGORIES: Category[] = ['video', 'manga', 'books'];
+export const CATEGORIES: Category[] = ['video', 'manga', 'books', 'live', 'tv'];
 
 const LS_KEY = 'pw-category';
 

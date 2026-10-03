@@ -249,8 +249,9 @@
 
     .collection-menu {
         position: absolute;
-        top: calc(100% + 8px);
         right: 0;
+        bottom: calc(100% + 8px);
+        top: auto;
         width: 220px;
         padding: 6px;
         border: 1px solid rgba(255, 255, 255, 0.12);

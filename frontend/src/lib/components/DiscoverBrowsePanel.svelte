@@ -5,7 +5,7 @@
 
     type Kind = 'all' | 'movie' | 'tv';
 
-    let { onPreview }: { onPreview: (item: TmdbSearchItem) => void } = $props();
+    let { onOpen }: { onOpen: (item: TmdbSearchItem) => void } = $props();
 
     const kinds: Array<{ key: Kind; label: string }> = [
         { key: 'all', label: 'all' },
@@ -249,10 +249,15 @@
             {#if results.length > 0}
                 <div class="pw-db-grid">
                     {#each results as item (item.media_type + '-' + item.tmdb_id)}
-                        <button type="button" class="pw-db-card" onclick={() => onPreview(item)}>
+                        <button type="button" class="pw-db-card" onclick={() => onOpen(item)}>
                             <div class="pw-db-poster">
                                 {#if item.poster_url}
-                                    <img src={poster(item.poster_url)} alt={item.title} loading="lazy" decoding="async" />
+                                    <img
+                                        src={poster(item.poster_url)}
+                                        alt={item.title}
+                                        loading="lazy"
+                                        decoding="async"
+                                    />
                                 {:else}
                                     <div class="pw-db-missing">
                                         <Icon name="screen-text" class="w-8 h-8" strokeWidth={1.8} />

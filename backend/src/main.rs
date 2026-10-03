@@ -1,4 +1,5 @@
 mod admin;
+mod align;
 mod anilist;
 mod auth;
 mod books;
@@ -7,11 +8,15 @@ mod collection;
 mod crypto;
 mod db;
 mod downloads;
+mod espn;
+mod ext;
 mod ffmpeg;
 mod intro;
 mod jackett;
 mod jackett_proxy;
 mod lang;
+mod live;
+mod livetv;
 mod log_buf;
 mod manga;
 mod manga_ck;
@@ -28,6 +33,7 @@ mod rate_limit;
 mod search;
 mod stream;
 mod subs;
+mod tv;
 mod tmdb;
 mod vpn;
 mod watch;
@@ -223,6 +229,9 @@ async fn main() {
     qbit::spawn_dht_watchdog(state.clone());
     jackett::spawn_auto_setup(state.clone());
     prowlarr::spawn_auto_setup(state.clone());
+    live::spawn_refresher();
+    tv::spawn_refresher();
+    align::spawn_warmup();
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -239,6 +248,9 @@ async fn main() {
         .merge(jackett_proxy::routes(state.clone()))
         .merge(prowlarr_proxy::routes(state.clone()))
         .merge(vpn::routes(state.clone()))
+        .merge(live::routes(state.clone()))
+        .merge(tv::routes(state.clone()))
+        .merge(align::routes(state.clone()))
         .merge(stream::routes(state.clone()))
         .merge(subs::routes(state.clone()))
         .merge(watch::routes(state.clone()))

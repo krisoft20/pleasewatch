@@ -636,6 +636,41 @@ export type BookMark = {
     created_at: string;
 };
 
+export type EspnTeam = {
+    name: string;
+    abbr: string;
+    logo: string | null;
+    color: string | null;
+    record: string | null;
+    score: string | null;
+};
+
+export type EspnMatch = {
+    away: EspnTeam;
+    home: EspnTeam;
+    detail: string;
+    state: 'pre' | 'in' | 'post' | string;
+    network: string | null;
+};
+
+export type LiveGame = {
+    id: string;
+    sport: string;
+    league: string;
+    label: string;
+    away: string;
+    home: string;
+    status: 'live' | 'scheduled' | 'final' | string;
+    start_hint: string | null;
+    starts_in: number | null;
+    source_url: string;
+    espn: EspnMatch | null;
+};
+
+export type LiveSchedule = { games: LiveGame[]; fetched_at: string };
+
+export type LiveResolve = { token: string; master_url: string; youtube?: string };
+
 let mePromise: Promise<User> | null = null;
 
 export const api = {
@@ -1058,7 +1093,7 @@ export const api = {
 
     torrentSearch: (
         q: string,
-        opts: { kind?: string; imdb?: string; source?: 'jackett' | 'prowlarr'; signal?: AbortSignal } = {}
+        opts: { kind?: string; imdb?: string; source?: 'jackett' | 'prowlarr' | 'ext'; signal?: AbortSignal } = {}
     ) => {
         const params = new URLSearchParams({ q });
         if (opts.kind) params.set('kind', opts.kind);
@@ -1145,8 +1180,41 @@ export const api = {
             body: JSON.stringify(body)
         }),
 
-    vpnDisable: () => request<{ ok: boolean }>('/api/admin/vpn/disable', { method: 'POST' })
+    vpnDisable: () => request<{ ok: boolean }>('/api/admin/vpn/disable', { method: 'POST' }),
+
+    liveSchedule: () => request<LiveSchedule>('/api/live/schedule'),
+
+    liveResolve: (source_url: string) =>
+        request<LiveResolve>('/api/live/resolve', {
+            method: 'POST',
+            body: JSON.stringify({ source_url })
+        }),
+
+    alignLines: (a_lang: string, b_lang: string, a: string, b: string) =>
+        request<{ pairs: [string, string][] }>('/api/align', {
+            method: 'POST',
+            body: JSON.stringify({ a_lang, b_lang, a, b })
+        }),
+
+    tvChannels: () => request<TvChannels>('/api/tv/channels'),
+
+    tvPlay: (id: string) =>
+        request<{ master_url: string }>('/api/tv/play', {
+            method: 'POST',
+            body: JSON.stringify({ id })
+        })
 };
+
+export type TvChannel = {
+    id: string;
+    name: string;
+    logo: string | null;
+    country: string;
+    group: string | null;
+    geo: boolean;
+};
+
+export type TvChannels = { channels: TvChannel[]; pending: string[] };
 
 export type VpnStatus = {
     enabled: boolean;

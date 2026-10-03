@@ -7,12 +7,12 @@
         title,
         items,
         width = 180,
-        onPreview
+        onOpen
     }: {
         title: string;
         items: TmdbSearchItem[];
         width?: number;
-        onPreview?: (item: TmdbSearchItem) => void;
+        onOpen?: (item: TmdbSearchItem) => void;
     } = $props();
 
     let scrollEl = $state<HTMLDivElement>();
@@ -46,8 +46,8 @@
     });
 
     function open(item: TmdbSearchItem) {
-        if (onPreview) {
-            onPreview(item);
+        if (onOpen) {
+            onOpen(item);
             return;
         }
         const route = item.media_type === 'tv' ? 'tv' : 'movie';
