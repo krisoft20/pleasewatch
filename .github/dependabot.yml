@@ -3,24 +3,33 @@ updates:
   - package-ecosystem: cargo
     directory: /backend
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      backend:
+        update-types: [minor, patch]
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      frontend:
+        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
 
   - package-ecosystem: docker
     directory: /backend
     schedule:
-      interval: weekly
+      interval: monthly
 
   - package-ecosystem: docker-compose
     directory: /deploy
     schedule:
-      interval: weekly
+      interval: monthly
