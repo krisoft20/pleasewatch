@@ -3323,6 +3323,12 @@
     :global(.pw-pl-root [aria-label='toggle playback']:focus-visible) {
         outline: none;
     }
+    :global(
+        .pw-pl-root :is(button, a, input, [role='slider'], [tabindex]):not([aria-label='toggle playback']):focus-visible
+    ) {
+        outline: 2px solid rgba(255, 255, 255, 0.28);
+        outline-offset: 3px;
+    }
     :global(.pw-pl-root .settings-open svg) {
         transform: rotate(90deg) scale(1.05);
     }
