@@ -1093,10 +1093,17 @@ export const api = {
 
     torrentSearch: (
         q: string,
-        opts: { kind?: string; imdb?: string; source?: 'jackett' | 'prowlarr' | 'ext'; signal?: AbortSignal } = {}
+        opts: {
+            kind?: string;
+            imdb?: string;
+            source?: 'jackett' | 'prowlarr' | 'ext';
+            abs?: number;
+            signal?: AbortSignal;
+        } = {}
     ) => {
         const params = new URLSearchParams({ q });
         if (opts.kind) params.set('kind', opts.kind);
+        if (opts.abs) params.set('abs', String(opts.abs));
         if (opts.imdb) params.set('imdb', opts.imdb);
         if (opts.source) params.set('source', opts.source);
         return request<TorrentOption[]>(`/api/torrents/search?${params}`, { signal: opts.signal });

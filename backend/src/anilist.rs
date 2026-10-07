@@ -175,6 +175,65 @@ fn cache_put(id: i64, v: Option<Bundle>) {
     }
 }
 
+static TITLES: OnceLock<Mutex<HashMap<String, (Vec<String>, Instant)>>> = OnceLock::new();
+
+const TITLES_QUERY: &str = r#"
+query ($q: String) {
+  Media(search: $q, type: ANIME) {
+    title { romaji english }
+    synonyms
+  }
+}
+"#;
+
+pub async fn anime_titles(q: &str) -> Vec<String> {
+    let key = q.trim().to_lowercase();
+    let titles = TITLES.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some((v, t)) = titles.lock().unwrap().get(&key) {
+        if t.elapsed() < Duration::from_secs(24 * 3600) {
+            return v.clone();
+        }
+    }
+
+    let body = serde_json::json!({ "query": TITLES_QUERY, "variables": { "q": q } });
+    let raw: serde_json::Value = match client().post(AL_URL).json(&body).send().await {
+        Ok(r) if r.status().is_success() => r.json().await.unwrap_or_default(),
+        Ok(r) => {
+            eprintln!("[anilist] titles http {} for '{q}'", r.status());
+            return Vec::new();
+        }
+        Err(e) => {
+            eprintln!("[anilist] titles '{q}': {e}");
+            return Vec::new();
+        }
+    };
+
+    let media = &raw["data"]["Media"];
+    let mut found: Vec<String> = Vec::new();
+    let main = [&media["title"]["romaji"], &media["title"]["english"]];
+    let synonyms = media["synonyms"].as_array().into_iter().flatten();
+    for (i, c) in main.into_iter().chain(synonyms).enumerate() {
+        let Some(s) = c.as_str().map(str::trim) else {
+            continue;
+        };
+        let ok = if i < 2 {
+            s.chars().all(|ch| (ch as u32) < 0x250)
+        } else {
+            s.is_ascii()
+        };
+        if ok && (3..=60).contains(&s.len()) && !found.iter().any(|f| f.eq_ignore_ascii_case(s)) {
+            found.push(s.to_string());
+        }
+    }
+    found.truncate(3);
+    println!("[anilist] titles for '{q}': {found:?}");
+    titles
+        .lock()
+        .unwrap()
+        .insert(key, (found.clone(), Instant::now()));
+    found
+}
+
 fn pick_title(t: &GqlTitle) -> String {
     t.english
         .clone()

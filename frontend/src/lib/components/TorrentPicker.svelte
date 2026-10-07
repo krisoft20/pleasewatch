@@ -13,6 +13,7 @@
         season?: number;
         episode?: number;
         kind?: 'movie' | 'tv' | 'anime' | 'book';
+        absOffset?: number;
         olKey?: string;
         onClose: () => void;
         onStarted?: (t: TorrentOption) => void;
@@ -28,6 +29,7 @@
         season,
         episode,
         kind,
+        absOffset,
         olKey,
         onClose,
         onStarted
@@ -216,6 +218,7 @@
                 const found = await api.torrentSearch(finalQ, {
                     kind,
                     imdb: imdbId,
+                    abs: absOffset,
                     source,
                     signal: abort.signal
                 });

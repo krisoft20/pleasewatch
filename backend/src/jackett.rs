@@ -409,6 +409,7 @@ pub struct ParsedTitle {
     pub season: Option<i32>,
     pub episode: Option<i32>,
     pub is_pack: bool,
+    pub range: Option<(i32, i32)>,
 }
 
 pub fn parse_title(raw: &str) -> ParsedTitle {
@@ -504,13 +505,35 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
         }
     }
 
+    let raw_lower = raw.to_lowercase();
+    if season.is_none() {
+        if let Some((pos, s)) = ordinal_season(&raw_lower) {
+            season = Some(s);
+            is_pack = true;
+            marker = Some(marker.map_or(pos, |m| m.min(pos)));
+        }
+    }
+
+    let mut range = None;
+    if episode.is_none() {
+        if let Some((pos, e)) = dash_episode(&raw_lower) {
+            episode = Some(e);
+            is_pack = false;
+            marker = Some(marker.map_or(pos, |m| m.min(pos)));
+        } else if let Some((pos, a, b)) = episode_range(&raw_lower) {
+            range = Some((a, b));
+            is_pack = true;
+            marker = Some(marker.map_or(pos, |m| m.min(pos)));
+        }
+    }
+
     if lower.contains("complete") || lower.contains("batch") {
         is_pack = true;
     }
 
     let show = match marker {
-        Some(pos) => clean_show(&lower[..pos]),
-        None => clean_show(&lower),
+        Some(pos) if lower.is_char_boundary(pos) => clean_show(&lower[..pos]),
+        _ => clean_show(&lower),
     };
 
     ParsedTitle {
@@ -518,7 +541,104 @@ pub fn parse_title(raw: &str) -> ParsedTitle {
         season,
         episode,
         is_pack,
+        range,
     }
+}
+
+fn digits_at(b: &[u8], from: usize) -> (usize, Option<i32>) {
+    let mut end = from;
+    while end < b.len() && b[end].is_ascii_digit() {
+        end += 1;
+    }
+    let n = std::str::from_utf8(&b[from..end])
+        .ok()
+        .and_then(|s| s.parse().ok());
+    (end, n)
+}
+
+fn looks_like_year(n: i32, len: usize) -> bool {
+    len == 4 && (1900..2100).contains(&n)
+}
+
+fn dash_episode(s: &str) -> Option<(usize, i32)> {
+    let b = s.as_bytes();
+    let mut from = 0;
+    while let Some(off) = s[from..].find(" - ") {
+        let pos = from + off;
+        let start = pos + 3;
+        let (end, n) = digits_at(b, start);
+        from = start;
+        let Some(n) = n else { continue };
+        if end - start > 4 || looks_like_year(n, end - start) {
+            continue;
+        }
+        let mut after = end;
+        if after < b.len()
+            && b[after] == b'v'
+            && after + 1 < b.len()
+            && b[after + 1].is_ascii_digit()
+        {
+            after += 2;
+        }
+        if after == b.len() || matches!(b[after], b' ' | b'[' | b'(' | b'.') {
+            return Some((pos, n));
+        }
+    }
+    None
+}
+
+fn ordinal_season(s: &str) -> Option<(usize, i32)> {
+    let b = s.as_bytes();
+    for (i, _) in s.match_indices(" season") {
+        let mut j = i;
+        while j > 0 && b[j - 1].is_ascii_alphabetic() {
+            j -= 1;
+        }
+        let suffix = &s[j..i];
+        if !matches!(suffix, "st" | "nd" | "rd" | "th") {
+            continue;
+        }
+        let mut k = j;
+        while k > 0 && b[k - 1].is_ascii_digit() {
+            k -= 1;
+        }
+        if let Ok(n) = s[k..j].parse::<i32>() {
+            return Some((k, n));
+        }
+    }
+    None
+}
+
+fn episode_range(s: &str) -> Option<(usize, i32, i32)> {
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let boundary = i == 0 || matches!(b[i - 1], b' ' | b'(' | b'[');
+        if !boundary || !b[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let (mut j, a) = digits_at(b, i);
+        let a_len = j - i;
+        while j < b.len() && b[j] == b' ' {
+            j += 1;
+        }
+        if j < b.len() && matches!(b[j], b'-' | b'~') {
+            let mut k = j + 1;
+            while k < b.len() && b[k] == b' ' {
+                k += 1;
+            }
+            let (end, c) = digits_at(b, k);
+            let closed = end == b.len() || matches!(b[end], b' ' | b')' | b']');
+            if let (Some(a), Some(c)) = (a, c) {
+                if closed && a < c && c < 2000 && !looks_like_year(a, a_len) && end > k {
+                    return Some((i, a, c));
+                }
+            }
+        }
+        i = j.max(i + 1);
+    }
+    None
 }
 
 fn clean_show(s: &str) -> String {
@@ -838,5 +958,84 @@ mod tests {
         let denied = server(StatusCode::UNAUTHORIZED, "").await;
         let err = Jackett::new(&denied, "key").ping().await.unwrap_err();
         assert_eq!(err, "http 401");
+    }
+
+    fn parts(t: &str) -> (Option<i32>, Option<i32>, bool, Option<(i32, i32)>) {
+        let p = parse_title(t);
+        (p.season, p.episode, p.is_pack, p.range)
+    }
+
+    #[test]
+    fn fansub_episode_numbers() {
+        assert_eq!(
+            parts("[SubsPlease] Mashle - 05 (1080p) [A1B2C3D4].mkv"),
+            (None, Some(5), false, None)
+        );
+        assert_eq!(
+            parts("[Erai-raws] Mashle - 05v2 [1080p][Multiple Subtitle]"),
+            (None, Some(5), false, None)
+        );
+        assert_eq!(
+            parts("[SubsPlease] Mashle S2 - 05 (1080p)"),
+            (Some(2), Some(5), false, None)
+        );
+        assert_eq!(
+            parts("[EMBER] Mashle 2nd Season - 05 [1080p]"),
+            (Some(2), Some(5), false, None)
+        );
+        assert_eq!(
+            parts("Mashle Season 2 - 05 [1080p]"),
+            (Some(2), Some(5), false, None)
+        );
+        assert_eq!(
+            parts("[Judas] Katainaka no Ossan - S02E06 [1080p][HEVC x265 10bit]"),
+            (Some(2), Some(6), false, None)
+        );
+        assert_eq!(
+            parts("[ASW] One Piece - 1125 [1080p HEVC]"),
+            (None, Some(1125), false, None)
+        );
+    }
+
+    #[test]
+    fn fansub_batches() {
+        assert_eq!(
+            parts("[Judas] Mashle (01-12) [BD 1080p][HEVC x265 10bit][Batch]"),
+            (None, None, true, Some((1, 12)))
+        );
+        assert_eq!(
+            parts("[SubsPlease] Mashle (13-24) (1080p) [Batch]"),
+            (None, None, true, Some((13, 24)))
+        );
+        assert_eq!(
+            parts("Mashle - 01~12 [1080p] [Batch]"),
+            (None, None, true, Some((1, 12)))
+        );
+        assert_eq!(parts("[Judas] Mashle (Season 1) [1080p][Batch]").2, true);
+        assert_eq!(
+            parts("Mashle Magic and Muscles S01 1080p BluRay X264 iNSPiRE"),
+            (Some(1), None, true, None)
+        );
+    }
+
+    #[test]
+    fn numbers_that_are_not_episodes() {
+        assert_eq!(parts("Dune - 2021 - 1080p BluRay x264").1, None);
+        assert_eq!(parts("Movie.2024-10-07.1080p.WEB.H264").3, None);
+        assert_eq!(parts("Show - 1080p WEB-DL DDP5.1 H.264").1, None);
+        assert_eq!(parts("Mob Psycho 100 III - 05 [1080p]").1, Some(5));
+        assert_eq!(parts("86 Eighty Six - 05 [1080p]").1, Some(5));
+    }
+
+    #[test]
+    fn fansub_show_names_still_match() {
+        let p = parse_title("[SubsPlease] Mashle - 05 (1080p)");
+        assert!(show_matches(&p.show, "Mashle"));
+        let p = parse_title("[Judas] Katainaka no Ossan, Kensei ni Naru (From Old Country Bumpkin to Master Swordsman) - 06 [1080p]");
+        assert!(show_matches(&p.show, "Katainaka no Ossan, Kensei ni Naru"));
+        assert!(show_matches(
+            &p.show,
+            "From Old Country Bumpkin to Master Swordsman"
+        ));
     }
 }

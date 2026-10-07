@@ -726,6 +726,12 @@
         };
     }
     const expectedEps = $derived(seasons.find((s) => s.season_number === activeSeason)?.episode_count ?? 0);
+    const absBefore = (season: number | null | undefined) =>
+        season == null
+            ? 0
+            : seasons
+                  .filter((s) => s.season_number > 0 && s.season_number < season)
+                  .reduce((n, s) => n + s.episode_count, 0);
     const seasonComplete = $derived(
         activeSeason !== null && expectedEps > 0 && readyInSeason(activeSeason) >= expectedEps
     );
@@ -1496,6 +1502,7 @@
             season={activeSeason}
             imdbId={detail?.imdb_id ?? undefined}
             kind={collectionKind}
+            absOffset={absBefore(activeSeason)}
             onClose={() => (pickerSeasonPack = false)}
             onStarted={async (t) => {
                 if (media) {
@@ -1528,6 +1535,7 @@
             episode={pickerEpisode?.display}
             imdbId={detail?.imdb_id ?? undefined}
             kind={collectionKind}
+            absOffset={absBefore(pickerEpisode?.season)}
             onClose={() => (pickerEpisode = null)}
             onStarted={async (t) => {
                 const pick = pickerEpisode;

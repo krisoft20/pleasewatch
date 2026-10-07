@@ -44,6 +44,7 @@ struct SearchQuery {
     kind: Option<String>,
     imdb: Option<String>,
     source: Option<SearchSource>,
+    abs: Option<i32>,
 }
 
 async fn handle_search(
@@ -111,6 +112,63 @@ async fn handle_search(
         q.q.clone()
     };
 
+    let parsed_q = crate::jackett::parse_title(&q.q);
+    let want_season = parsed_q.season;
+    let want_episode = parsed_q.episode;
+    let abs = q.abs.unwrap_or(0).max(0);
+    let is_anime = q.kind.as_deref() == Some("anime");
+
+    let lang =
+        q.q.split_whitespace()
+            .last()
+            .filter(|w| matches!(*w, "PL" | "GER" | "ENG"));
+    let show_text =
+        q.q.split_whitespace()
+            .filter(|w| Some(*w) != lang)
+            .filter(|w| {
+                let l = w.to_lowercase();
+                let rest = l.strip_prefix('s').unwrap_or("");
+                !(rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+                    && rest.chars().all(|c| c.is_ascii_digit() || c == 'e'))
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+
+    let alt_titles = if is_anime && !ext && !show_text.is_empty() {
+        crate::anilist::anime_titles(&show_text).await
+    } else {
+        Vec::new()
+    };
+
+    let mut extra: Vec<String> = Vec::new();
+    if is_anime && !ext {
+        let mut names = vec![show_text.clone()];
+        for t in &alt_titles {
+            if !names.iter().any(|n| n.eq_ignore_ascii_case(t)) {
+                names.push(t.clone());
+            }
+        }
+        let tail = lang.map(|l| format!(" {l}")).unwrap_or_default();
+        for name in &names {
+            match (want_season, want_episode) {
+                (Some(s), Some(e)) => {
+                    extra.push(format!("{name} {e:02}{tail}"));
+                    if s > 1 && abs > 0 {
+                        extra.push(format!("{name} {:02}{tail}", abs + e));
+                    }
+                }
+                (Some(_), None) => {
+                    extra.push(format!("{name}{tail}"));
+                    extra.push(format!("{name} batch{tail}"));
+                }
+                _ => extra.push(format!("{name}{tail}")),
+            }
+        }
+        extra.retain(|x| !x.eq_ignore_ascii_case(&search_q));
+        extra.dedup();
+    }
+    let extra_count = extra.len();
+
     let title_search = dual_search(&jackett, &prowlarr, &search_q, &indexers, cats, None);
     let imdb_search = async {
         if let Some(imdb) = q.imdb.as_deref() {
@@ -119,14 +177,32 @@ async fn handle_search(
             Vec::new()
         }
     };
+    let extra_search = async {
+        let mut set = tokio::task::JoinSet::new();
+        for xq in extra {
+            let (j, p, idx) = (jackett.clone(), prowlarr.clone(), indexers.clone());
+            set.spawn(async move { dual_search(&j, &p, &xq, &idx, cats, None).await });
+        }
+        let mut out = Vec::new();
+        while let Some(r) = set.join_next().await {
+            if let Ok(found) = r {
+                out.extend(found);
+            }
+        }
+        out
+    };
     let (mut title_items, imdb_items) = if ext {
         match q.imdb.as_deref() {
             Some(imdb) => (Vec::new(), crate::ext::search(&search_q, Some(imdb)).await),
             None => (crate::ext::search(&search_q, None).await, Vec::new()),
         }
     } else {
-        tokio::join!(title_search, imdb_search)
+        let (t, i, x) = tokio::join!(title_search, imdb_search, extra_search);
+        let mut t = t;
+        t.extend(x);
+        (t, i)
     };
+    let found_count = title_items.len() + imdb_items.len();
 
     if is_book_kind && title_items.is_empty() && imdb_items.is_empty() {
         let tokens: Vec<&str> = q.q.split_whitespace().collect();
@@ -138,20 +214,17 @@ async fn handle_search(
         }
     }
 
-    let parsed_q = crate::jackett::parse_title(&q.q);
     let expected_show = parsed_q.show.clone();
-    let want_season = parsed_q.season;
-    let want_episode = parsed_q.episode;
     let skip_episode_match = matches!(q.kind.as_deref(), Some("movie") | Some("book"));
 
-    let marker_ok = |p: &crate::jackett::ParsedTitle| -> bool {
-        match (want_season, want_episode) {
-            (Some(s), Some(e)) => {
-                (p.season == Some(s) && p.episode == Some(e)) || (p.season == Some(s) && p.is_pack)
-            }
-            (Some(s), None) => p.season == Some(s) && p.is_pack,
-            _ => true,
-        }
+    let marker_ok =
+        |p: &crate::jackett::ParsedTitle| fits_marker(p, want_season, want_episode, abs);
+    let show_ok = |p: &crate::jackett::ParsedTitle| -> bool {
+        expected_show.is_empty()
+            || crate::jackett::show_matches(&p.show, &expected_show)
+            || alt_titles
+                .iter()
+                .any(|t| crate::jackett::show_matches(&p.show, t))
     };
 
     let mut seen = std::collections::HashSet::new();
@@ -180,7 +253,7 @@ async fn handle_search(
             if !marker_ok(&p) {
                 continue;
             }
-            if !expected_show.is_empty() && !crate::jackett::show_matches(&p.show, &expected_show) {
+            if !show_ok(&p) {
                 fallback.push(t);
                 continue;
             }
@@ -190,6 +263,12 @@ async fn handle_search(
 
     if items.len() < 5 {
         items.extend(fallback);
+    }
+    if is_anime {
+        crate::pi!(
+            "[downloads] anime '{show_text}' +{extra_count} queries {alt_titles:?} -> {} of {found_count}",
+            items.len()
+        );
     }
 
     let is_book = matches!(q.kind.as_deref(), Some("book"));
@@ -236,7 +315,11 @@ async fn handle_search(
         .map(|t| {
             let p = crate::jackett::parse_title(&t.title);
             let exact = match want_episode {
-                Some(e) => p.episode == Some(e) || crate::jackett::episode_match(&t.title, e),
+                Some(e) => {
+                    p.episode == Some(e)
+                        || (abs > 0 && p.episode == Some(abs + e))
+                        || crate::jackett::episode_match(&t.title, e)
+                }
                 None => false,
             };
             let pack = p.is_pack || crate::jackett::pack_match(&t.title);
@@ -327,6 +410,35 @@ async fn handle_search(
     items.truncate(120);
 
     Json(items).into_response()
+}
+
+fn fits_marker(
+    p: &crate::jackett::ParsedTitle,
+    want_season: Option<i32>,
+    want_episode: Option<i32>,
+    abs: i32,
+) -> bool {
+    let covers = |n: i32| p.range.is_some_and(|(a, b)| a <= n && n <= b);
+    match (want_season, want_episode) {
+        (Some(s), Some(e)) => {
+            let target = if s == 1 { e } else { abs + e };
+            (p.season == Some(s) && p.episode == Some(e))
+                || (p.season == Some(s) && p.is_pack)
+                || (p.season.is_none() && s == 1 && p.episode == Some(e))
+                || (p.season.is_none() && abs > 0 && p.episode == Some(abs + e))
+                || (p.season.is_none() && (s == 1 || abs > 0) && covers(target))
+        }
+        (Some(s), None) => {
+            (p.season == Some(s) && p.is_pack)
+                || (p.season.is_none()
+                    && p.is_pack
+                    && match p.range {
+                        Some((a, _)) => (s == 1 && a <= 1) || (abs > 0 && a == abs + 1),
+                        None => s == 1,
+                    })
+        }
+        _ => true,
+    }
 }
 
 async fn dual_search(
@@ -2029,4 +2141,175 @@ fn spawn_audio_pregen(dest: String) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fits_marker;
+    use crate::jackett::parse_title;
+
+    fn fits(t: &str, s: Option<i32>, e: Option<i32>, abs: i32) -> bool {
+        fits_marker(&parse_title(t), s, e, abs)
+    }
+
+    #[test]
+    fn episode_search_takes_fansub_numbering() {
+        assert!(fits(
+            "[SubsPlease] Mashle - 05 (1080p)",
+            Some(1),
+            Some(5),
+            0
+        ));
+        assert!(fits("Mashle S01E05 1080p WEB H264", Some(1), Some(5), 0));
+        assert!(fits("[Judas] Mashle (01-12) [Batch]", Some(1), Some(5), 0));
+        assert!(!fits(
+            "[SubsPlease] Mashle - 06 (1080p)",
+            Some(1),
+            Some(5),
+            0
+        ));
+        assert!(!fits(
+            "[SubsPlease] Mashle - 05 (1080p)",
+            Some(2),
+            Some(5),
+            0
+        ));
+    }
+
+    #[test]
+    fn later_seasons_use_season_tag_or_absolute_number() {
+        assert!(fits(
+            "[SubsPlease] Mashle S2 - 05 (1080p)",
+            Some(2),
+            Some(5),
+            12
+        ));
+        assert!(fits("[EMBER] Mashle 2nd Season - 05", Some(2), Some(5), 12));
+        assert!(fits(
+            "[Erai-raws] Mashle - 17 [1080p]",
+            Some(2),
+            Some(5),
+            12
+        ));
+        assert!(fits(
+            "[SubsPlease] Mashle (13-24) [Batch]",
+            Some(2),
+            Some(5),
+            12
+        ));
+        assert!(!fits(
+            "[Judas] Mashle (01-12) [Batch]",
+            Some(2),
+            Some(5),
+            12
+        ));
+        assert!(!fits(
+            "[Erai-raws] Mashle - 17 [1080p]",
+            Some(2),
+            Some(5),
+            0
+        ));
+    }
+
+    #[test]
+    fn season_search_takes_batches() {
+        assert!(fits(
+            "[Judas] Mashle (01-12) [BD 1080p][Batch]",
+            Some(1),
+            None,
+            0
+        ));
+        assert!(fits("[Judas] Mashle [Batch]", Some(1), None, 0));
+        assert!(fits("Mashle S01 1080p BluRay x264", Some(1), None, 0));
+        assert!(fits(
+            "[SubsPlease] Mashle (13-24) [Batch]",
+            Some(2),
+            None,
+            12
+        ));
+        assert!(!fits(
+            "[SubsPlease] Mashle (13-24) [Batch]",
+            Some(1),
+            None,
+            0
+        ));
+        assert!(!fits("[SubsPlease] Mashle - 05 (1080p)", Some(1), None, 0));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_anime_search() {
+        let j = crate::jackett::Jackett::new(
+            &std::env::var("JACKETT_URL").unwrap(),
+            &std::env::var("JACKETT_API_KEY").unwrap(),
+        );
+        let idx: Vec<String> = std::env::var("JACKETT_INDEXERS")
+            .unwrap()
+            .split(',')
+            .map(String::from)
+            .collect();
+        let cats = crate::jackett::ANIME_PLUS_TV_CATS;
+        for (show, s, e, abs) in [
+            ("Mashle: Magic and Muscles", 1, Some(5), 0),
+            ("Mashle: Magic and Muscles", 1, None, 0),
+            (
+                "From Old Country Bumpkin to Master Swordsman",
+                2,
+                Some(6),
+                12,
+            ),
+        ] {
+            let marker = match e {
+                Some(e) => format!("S{s:02}E{e:02}"),
+                None => format!("S{s:02}"),
+            };
+            let old_q = format!("{show} {marker}");
+            let old_hits = j.search(&old_q, &idx, cats, None).await;
+            let old_kept = old_hits
+                .iter()
+                .filter(|t| {
+                    let p = parse_title(&t.title);
+                    let m = match e {
+                        Some(e) => p.season == Some(s) && (p.episode == Some(e) || p.is_pack),
+                        None => p.season == Some(s) && p.is_pack,
+                    };
+                    m && crate::jackett::show_matches(&p.show, show)
+                })
+                .count();
+
+            let alts = crate::anilist::anime_titles(show).await;
+            let mut names = vec![show.to_string()];
+            names.extend(alts.iter().cloned());
+            let mut hits = old_hits.clone();
+            for n in &names {
+                let qs: Vec<String> = match e {
+                    Some(e) if s > 1 => vec![format!("{n} {e:02}"), format!("{n} {:02}", abs + e)],
+                    Some(e) => vec![format!("{n} {e:02}")],
+                    None => vec![n.clone(), format!("{n} batch")],
+                };
+                for q in qs {
+                    hits.extend(j.search(&q, &idx, cats, None).await);
+                }
+            }
+            let mut seen = std::collections::HashSet::new();
+            let kept: Vec<_> = hits
+                .into_iter()
+                .filter(|t| seen.insert(t.magnet.clone()))
+                .filter(|t| {
+                    let p = parse_title(&t.title);
+                    fits_marker(&p, Some(s), e, abs)
+                        && names
+                            .iter()
+                            .any(|n| crate::jackett::show_matches(&p.show, n))
+                })
+                .collect();
+            println!(
+                "\n{old_q}: before {old_kept}, after {} (titles {alts:?})",
+                kept.len()
+            );
+            for t in kept.iter().take(6) {
+                println!("   S:{:<4} {}", t.seeds, t.title);
+            }
+        }
+    }
 }
