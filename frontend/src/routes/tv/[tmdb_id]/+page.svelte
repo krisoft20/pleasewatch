@@ -726,6 +726,24 @@
         };
     }
     const expectedEps = $derived(seasons.find((s) => s.season_number === activeSeason)?.episode_count ?? 0);
+    const seasonCount = (season: number | null | undefined) =>
+        seasons.find((s) => s.season_number === season)?.episode_count ?? 0;
+    function haveDisplays(season: number | null | undefined): number[] {
+        if (season == null) return [];
+        const out: number[] = [];
+        for (let ep = 1; ep <= seasonCount(season); ep++) {
+            const d = displayEpisodeFor(season, ep);
+            const f = findEpisodeFile(season, ep);
+            if (
+                f?.file_path ||
+                f?.status === 'downloading' ||
+                f?.status === 'processing' ||
+                epProgress.has(epKey(season, d))
+            )
+                out.push(d);
+        }
+        return out;
+    }
     const absBefore = (season: number | null | undefined) =>
         season == null
             ? 0
@@ -1536,6 +1554,22 @@
             imdbId={detail?.imdb_id ?? undefined}
             kind={collectionKind}
             absOffset={absBefore(pickerEpisode?.season)}
+            haveEpisodes={haveDisplays(pickerEpisode?.season)}
+            maxEpisode={pickerEpisode && seasonCount(pickerEpisode.season)
+                ? displayEpisodeFor(pickerEpisode.season, seasonCount(pickerEpisode.season))
+                : undefined}
+            onMoreStarted={async (eps) => {
+                const s = pickerEpisode?.season;
+                if (s != null) {
+                    const next = new Map(epProgress);
+                    for (const d of eps) next.set(epKey(s, d), 0.01);
+                    epProgress = next;
+                }
+                try {
+                    media = await api.getMediaByTmdb('tv', tmdbId);
+                } catch {}
+                seedActiveDownload();
+            }}
             onClose={() => (pickerEpisode = null)}
             onStarted={async (t) => {
                 const pick = pickerEpisode;

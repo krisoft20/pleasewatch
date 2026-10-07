@@ -14,9 +14,12 @@
         episode?: number;
         kind?: 'movie' | 'tv' | 'anime' | 'book';
         absOffset?: number;
+        haveEpisodes?: number[];
+        maxEpisode?: number;
         olKey?: string;
         onClose: () => void;
         onStarted?: (t: TorrentOption) => void;
+        onMoreStarted?: (episodes: number[]) => void;
     };
 
     let {
@@ -30,9 +33,12 @@
         episode,
         kind,
         absOffset,
+        haveEpisodes = [],
+        maxEpisode,
         olKey,
         onClose,
-        onStarted
+        onStarted,
+        onMoreStarted
     }: Props = $props();
 
     let settings = $state<AdminSettings | null>(null);
@@ -284,13 +290,102 @@
                 await api.createDownload(req);
             }
             if (addBook) onStarted?.(t);
+            if (!addBook && episode != null) {
+                lookingAhead = true;
+                const hits = await lookAhead(t);
+                lookingAhead = false;
+                if (hits.length > 0) {
+                    nextUp = { label: [t.release_group, t.quality].filter(Boolean).join(' · '), hits };
+                    return;
+                }
+            }
             onClose();
         } catch (caught) {
             const msg = caught instanceof Error ? caught.message : 'failed to start';
             alert(msg);
         } finally {
             starting = null;
+            lookingAhead = false;
         }
+    }
+
+    type NextHit = { ep: number; t: TorrentOption; on: boolean };
+    let nextUp = $state<{ label: string; hits: NextHit[] } | null>(null);
+    let lookingAhead = $state(false);
+    let addingNext = $state(false);
+
+    function sameRelease(a: TorrentOption, b: TorrentOption) {
+        if (a.quality !== b.quality) return false;
+        if (a.video_codec && b.video_codec && a.video_codec !== b.video_codec) return false;
+        if (a.release_group && b.release_group) return a.release_group.toLowerCase() === b.release_group.toLowerCase();
+        const shape = (s: string) =>
+            s
+                .toLowerCase()
+                .replace(/s\d{1,2}e\d{1,4}/g, '#')
+                .replace(/ - \d{1,4}(v\d)?/g, ' - #');
+        return shape(a.title) === shape(b.title);
+    }
+
+    function isEpisode(title: string, ep: number) {
+        const t = title.toLowerCase();
+        if (/\b(batch|complete)\b/.test(t)) return false;
+        const p = String(ep).padStart(2, '0');
+        return t.includes(`e${p}`) || new RegExp(' - 0*' + ep + '(v[0-9])?([ .[(]|$)').test(t);
+    }
+
+    async function lookAhead(t0: TorrentOption): Promise<NextHit[]> {
+        if (episode == null) return [];
+        const base = (q + langSuffix(lang)).trim();
+        if (!/S\d{1,2}E\d{1,4}/i.test(base)) return [];
+        const eps: number[] = [];
+        for (let e = episode + 1; eps.length < 6 && e <= episode + 12; e++) {
+            if (maxEpisode && e > maxEpisode) break;
+            if (!haveEpisodes.includes(e)) eps.push(e);
+        }
+        const found = await Promise.all(
+            eps.map(async (e) => {
+                const qe = base.replace(/S(\d{1,2})E\d{1,4}/i, (_m, s) => `S${s}E${String(e).padStart(2, '0')}`);
+                const lists = await Promise.all(
+                    (['jackett', 'prowlarr'] as const).map((source) =>
+                        api.torrentSearch(qe, { kind, imdb: imdbId, source, abs: absOffset }).catch(() => [])
+                    )
+                );
+                const best = lists
+                    .flat()
+                    .filter((r) => sameRelease(t0, r) && isEpisode(r.title, e))
+                    .sort((a, b) => b.seeds - a.seeds)[0];
+                return best ? { ep: e, t: best, on: true } : null;
+            })
+        );
+        return found.filter((h): h is NextHit => h !== null);
+    }
+
+    async function downloadNext() {
+        if (!nextUp) return;
+        addingNext = true;
+        const picked = nextUp.hits.filter((h) => h.on);
+        const started: number[] = [];
+        for (const h of picked) {
+            try {
+                await api.createDownload({
+                    magnet: h.t.magnet,
+                    media_id: mediaId,
+                    tmdb_id: tmdbId,
+                    media_type: mediaType,
+                    season: season ?? null,
+                    episode: h.ep,
+                    title: h.t.title,
+                    torrent: h.t
+                });
+                started.push(h.ep);
+            } catch (caught) {
+                alert(caught instanceof Error ? caught.message : `failed to start e${h.ep}`);
+                break;
+            }
+        }
+        if (started.length > 0) onMoreStarted?.(started);
+        addingNext = false;
+        onClose();
     }
 
     function fmtSize(bytes: number): string {
@@ -530,6 +625,40 @@
                         auth). the docker compose stack in the deploy slice puts jackett on the internal network only.
                     </p>
                 </div>
+            {:else if lookingAhead}
+                <div class="pw-tp-empty">
+                    <div class="pw-tp-spin"></div>
+                    <p>download started, checking the next episodes...</p>
+                </div>
+            {:else if nextUp}
+                <div class="pw-tp-next">
+                    <p class="pw-tp-next-head">
+                        {nextUp.label ? `${nextUp.label} also has:` : 'the same release also has:'}
+                    </p>
+                    <div class="pw-tp-next-grid">
+                        {#each nextUp.hits as h (h.ep)}
+                            <button
+                                class="pw-tp-next-ep"
+                                class:is-on={h.on}
+                                title="{h.t.title} · {fmtSize(h.t.size)}"
+                                onclick={() => (h.on = !h.on)}
+                            >
+                                <span>E{String(h.ep).padStart(2, '0')}</span>
+                                <small>S:{h.t.seeds}</small>
+                            </button>
+                        {/each}
+                    </div>
+                    <div class="pw-tp-next-actions">
+                        <button class="pw-tp-close" onclick={onClose} disabled={addingNext}>no thanks</button>
+                        <button
+                            class="pw-tp-dl"
+                            onclick={downloadNext}
+                            disabled={addingNext || !nextUp.hits.some((h) => h.on)}
+                        >
+                            {addingNext ? 'adding...' : `download ${nextUp.hits.filter((h) => h.on).length}`}
+                        </button>
+                    </div>
+                </div>
             {:else if loading}
                 <div class="pw-tp-empty">
                     <div class="pw-tp-spin"></div>
@@ -590,7 +719,7 @@
             {/if}
         </div>
 
-        {#if !envErr && !loading && results.length > 0}
+        {#if !envErr && !loading && !lookingAhead && !nextUp && results.length > 0}
             {@const aggCounts = allSources
                 .map((s) => [s, results.filter((r) => r.aggregator === s).length] as const)
                 .filter(([, n]) => n > 0)}
@@ -780,6 +909,59 @@
     }
     .pw-tp-row:hover {
         background: rgba(255, 255, 255, 0.045);
+    }
+    .pw-tp-next {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .pw-tp-next-head {
+        margin: 2px 12px 6px;
+        font-size: 13px;
+        color: var(--pw-fg-dim);
+    }
+    .pw-tp-next-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 12px;
+    }
+    .pw-tp-next-ep {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        width: 64px;
+        height: 56px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--pw-fg-dim);
+        cursor: pointer;
+        transition:
+            background 0.12s,
+            border-color 0.12s,
+            color 0.12s;
+    }
+    .pw-tp-next-ep span {
+        font-size: 14px;
+        font-weight: 700;
+    }
+    .pw-tp-next-ep small {
+        font-size: 11px;
+        opacity: 0.8;
+    }
+    .pw-tp-next-ep.is-on {
+        border-color: var(--pw-accent);
+        background: color-mix(in oklch, var(--pw-accent) 18%, transparent);
+        color: var(--pw-fg);
+    }
+    .pw-tp-next-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin: 10px 12px 4px;
     }
     .pw-tp-row-pref {
         background: rgba(192, 132, 252, 0.04);
