@@ -1689,11 +1689,19 @@ fn split_dialog(line: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = line;
     loop {
+        let word = |s: &str| {
+            s.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        };
         let cut = rest.match_indices(" - ").find(|(i, _)| {
-            rest[i + 3..]
+            let after = &rest[i + 3..];
+            let starts_turn = after
                 .chars()
                 .next()
-                .is_some_and(|c| c.is_uppercase() || c == '"' || c == '¿' || c == '¡')
+                .is_some_and(|c| c.is_uppercase() || c == '"' || c == '¿' || c == '¡');
+            let before = rest[..*i].split_whitespace().last().map(word);
+            let stutter = before.is_some() && before == after.split_whitespace().next().map(word);
+            starts_turn && !stutter
         });
         match cut {
             Some((i, _)) if i > 1 => {
@@ -2212,6 +2220,9 @@ mod tests {
             split_dialog("- ¿Dónde? - ¡Aquí!"),
             vec!["- ¿Dónde?", "- ¡Aquí!"]
         );
+        assert_eq!(cue("- I - I don't know."), "- I - I don't know.");
+        assert_eq!(cue("- My - My, look at you."), "- My - My, look at you.");
+        assert_eq!(cue("- My-my. - Stop it."), "- My-my.|- Stop it.");
     }
 
     fn fits(t: &str, s: Option<i32>, e: Option<i32>, abs: i32) -> bool {
