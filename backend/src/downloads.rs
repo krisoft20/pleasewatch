@@ -1682,6 +1682,32 @@ fn wrap_cue(line: &str) -> String {
     }
 }
 
+fn split_dialog(line: &str) -> Vec<String> {
+    if !line.starts_with('-') {
+        return vec![line.to_string()];
+    }
+    let mut out = Vec::new();
+    let mut rest = line;
+    loop {
+        let cut = rest.match_indices(" - ").find(|(i, _)| {
+            rest[i + 3..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_uppercase() || c == '"' || c == '¿' || c == '¡')
+        });
+        match cut {
+            Some((i, _)) if i > 1 => {
+                out.push(rest[..i].trim_end().to_string());
+                rest = &rest[i + 1..];
+            }
+            _ => {
+                out.push(rest.to_string());
+                return out;
+            }
+        }
+    }
+}
+
 fn flatten_vtt_cues(vtt: &str) -> String {
     let mut out = String::with_capacity(vtt.len());
     let mut buf: Vec<&str> = Vec::new();
@@ -1691,9 +1717,22 @@ fn flatten_vtt_cues(vtt: &str) -> String {
         if buf.is_empty() {
             return;
         }
-        let joined = buf.iter().map(|s| s.trim()).collect::<Vec<_>>().join(" ");
-        let wrapped = wrap_cue(joined.trim());
-        out.push_str(&wrapped);
+        let mut turns: Vec<String> = Vec::new();
+        for l in buf.iter().map(|s| s.trim()) {
+            match turns.last_mut() {
+                Some(last) if !l.starts_with('-') => {
+                    last.push(' ');
+                    last.push_str(l);
+                }
+                _ => turns.push(l.to_string()),
+            }
+        }
+        let turns: Vec<String> = turns.iter().flat_map(|t| split_dialog(t)).collect();
+        if turns.len() > 1 {
+            out.push_str(&turns.join("\n"));
+        } else {
+            out.push_str(&wrap_cue(turns[0].trim()));
+        }
         out.push('\n');
         buf.clear();
     };
@@ -2145,8 +2184,35 @@ fn spawn_audio_pregen(dest: String) {
 
 #[cfg(test)]
 mod tests {
-    use super::fits_marker;
+    use super::{fits_marker, flatten_vtt_cues, split_dialog};
     use crate::jackett::parse_title;
+
+    fn cue(text: &str) -> String {
+        let vtt = format!("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n{text}\n");
+        let out = flatten_vtt_cues(&vtt);
+        out.lines()
+            .skip_while(|l| !l.contains("-->"))
+            .skip(1)
+            .take_while(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join("|")
+    }
+
+    #[test]
+    fn ocr_dialog_lines_stay_apart() {
+        assert_eq!(cue("- You're here.\n- Next."), "- You're here.|- Next.");
+        assert_eq!(cue("- You're here. - Next."), "- You're here.|- Next.");
+        assert_eq!(
+            cue("I don't know\nwhat you mean."),
+            "I don't know what you mean."
+        );
+        assert_eq!(cue("- Well - maybe not."), "- Well - maybe not.");
+        assert_eq!(split_dialog("-Where? -Here."), vec!["-Where? -Here."]);
+        assert_eq!(
+            split_dialog("- ¿Dónde? - ¡Aquí!"),
+            vec!["- ¿Dónde?", "- ¡Aquí!"]
+        );
+    }
 
     fn fits(t: &str, s: Option<i32>, e: Option<i32>, abs: i32) -> bool {
         fits_marker(&parse_title(t), s, e, abs)
