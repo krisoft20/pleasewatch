@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::{broadcast, RwLock};
 
@@ -56,6 +57,7 @@ pub enum WsMsg {
 pub struct Session {
     playing: bool,
     current_time: f64,
+    at: Instant,
     participants: u32,
     tx: broadcast::Sender<String>,
 }
@@ -79,6 +81,7 @@ impl PartyManager {
                 Session {
                     playing: false,
                     current_time: 0.0,
+                    at: Instant::now(),
                     participants: 0,
                     tx,
                 },
@@ -106,7 +109,18 @@ impl PartyManager {
         n
     }
 
-    async fn dispatch(&self, code: &str, msg: &WsMsg) {
+    pub(crate) async fn clock(&self, code: &str) -> Option<(bool, f64)> {
+        let g = self.inner.read().await;
+        let s = g.get(code)?;
+        let pos = if s.playing {
+            s.current_time + s.at.elapsed().as_secs_f64()
+        } else {
+            s.current_time
+        };
+        Some((s.playing, pos))
+    }
+
+    pub(crate) async fn dispatch(&self, code: &str, msg: &WsMsg) {
         let mut g = self.inner.write().await;
         let Some(s) = g.get_mut(code) else {
             return;
@@ -115,13 +129,16 @@ impl PartyManager {
             WsMsg::Play { time } => {
                 s.playing = true;
                 s.current_time = *time;
+                s.at = Instant::now();
             }
             WsMsg::Pause { time } => {
                 s.playing = false;
                 s.current_time = *time;
+                s.at = Instant::now();
             }
             WsMsg::Seek { time } => {
                 s.current_time = *time;
+                s.at = Instant::now();
             }
             _ => {}
         }
@@ -478,7 +495,7 @@ async fn handle_sub_file(
         .unwrap()
 }
 
-fn abs_path(root: &str, rel: &str) -> PathBuf {
+pub(crate) fn abs_path(root: &str, rel: &str) -> PathBuf {
     if std::path::Path::new(rel).is_absolute() {
         PathBuf::from(rel)
     } else {

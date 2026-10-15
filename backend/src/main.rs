@@ -37,6 +37,7 @@ mod tmdb;
 mod tv;
 mod vpn;
 mod watch;
+mod watchalong;
 mod ws;
 
 use axum::Router;
@@ -261,6 +262,7 @@ async fn main() {
         .merge(clips::public_routes())
         .merge(party::routes(state.clone()))
         .merge(party::public_routes())
+        .merge(watchalong::routes())
         .merge(ws::routes())
         .with_state(state)
         .layer(cors);
