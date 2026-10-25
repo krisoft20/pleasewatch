@@ -10,7 +10,7 @@ use axum::{
     routing::{delete, get},
     Extension, Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -24,6 +24,10 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/api/torrents/indexers", get(handle_indexers))
         .route("/api/downloads", get(handle_list).post(handle_create))
         .route("/api/downloads/{id}", delete(handle_cancel))
+        .route(
+            "/api/downloads/{id}/files",
+            get(handle_files).post(handle_set_file),
+        )
         .layer(axum::middleware::from_fn_with_state(
             state,
             crate::middleware::require_auth,
@@ -808,6 +812,119 @@ async fn handle_cancel(
     StatusCode::NO_CONTENT.into_response()
 }
 
+#[derive(Serialize)]
+struct PackFile {
+    index: i64,
+    season: i32,
+    episode: i32,
+    name: String,
+    size: i64,
+    progress: f64,
+    wanted: bool,
+}
+
+async fn handle_files(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<Arc<AppState>>,
+    AxPath(id): AxPath<String>,
+) -> impl IntoResponse {
+    let row = {
+        let db = state.db.lock().await;
+        match db.find_download(&id) {
+            Ok(Some(d)) => d,
+            Ok(None) => return err(StatusCode::NOT_FOUND, "not found"),
+            Err(e) => {
+                crate::pe!("[downloads] files lookup failed: {e}");
+                return err(StatusCode::INTERNAL_SERVER_ERROR, "db error");
+            }
+        }
+    };
+
+    let is_owner = row.requested_by.as_deref() == Some(auth.id.as_str());
+    if !auth.is_admin() && !is_owner {
+        return err(StatusCode::FORBIDDEN, "not yours");
+    }
+
+    let Some(hash) = row.qbit_hash else {
+        return Json::<Vec<PackFile>>(Vec::new()).into_response();
+    };
+    let Some(qbit) = state.qbit.lock().await.clone() else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, "qbit not configured");
+    };
+
+    let files = match qbit.files(&hash).await {
+        Ok(f) => f,
+        Err(e) => {
+            crate::pe!("[downloads] files fetch failed: {e}");
+            return err(StatusCode::BAD_GATEWAY, "qbit files failed");
+        }
+    };
+
+    let mut out: Vec<PackFile> = files
+        .into_iter()
+        .filter_map(|f| {
+            let (season, episode) = pack_episode_from_name(&f.name)?;
+            Some(PackFile {
+                index: f.index,
+                season,
+                episode,
+                name: f.name,
+                size: f.size,
+                progress: f.progress,
+                wanted: f.priority != 0,
+            })
+        })
+        .collect();
+    out.sort_by_key(|f| (f.season, f.episode));
+
+    Json(out).into_response()
+}
+
+#[derive(Deserialize)]
+struct FileWanted {
+    index: i64,
+    wanted: bool,
+}
+
+async fn handle_set_file(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<Arc<AppState>>,
+    AxPath(id): AxPath<String>,
+    Json(body): Json<FileWanted>,
+) -> impl IntoResponse {
+    let row = {
+        let db = state.db.lock().await;
+        match db.find_download(&id) {
+            Ok(Some(d)) => d,
+            Ok(None) => return err(StatusCode::NOT_FOUND, "not found"),
+            Err(e) => {
+                crate::pe!("[downloads] file toggle lookup failed: {e}");
+                return err(StatusCode::INTERNAL_SERVER_ERROR, "db error");
+            }
+        }
+    };
+
+    let is_owner = row.requested_by.as_deref() == Some(auth.id.as_str());
+    if !auth.is_admin() && !is_owner {
+        return err(StatusCode::FORBIDDEN, "not yours");
+    }
+
+    let Some(hash) = row.qbit_hash else {
+        return err(StatusCode::NOT_FOUND, "no torrent yet");
+    };
+    let Some(qbit) = state.qbit.lock().await.clone() else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, "qbit not configured");
+    };
+
+    let prio = if body.wanted { 1 } else { 0 };
+    if let Err(e) = qbit.set_file_prio(&hash, &[body.index], prio).await {
+        crate::pe!("[downloads] set file prio {prio} failed: {e}");
+        return err(StatusCode::BAD_GATEWAY, "qbit rejected the change");
+    }
+
+    StatusCode::NO_CONTENT.into_response()
+}
+
 fn err(status: StatusCode, msg: &str) -> axum::response::Response {
     (status, Json(ApiError { error: msg.into() })).into_response()
 }
@@ -1299,6 +1416,20 @@ fn is_video_basename(name: &str) -> bool {
             | Some("flv")
             | Some("wmv")
     )
+}
+
+pub fn pack_episode_from_name(name: &str) -> Option<(i32, i32)> {
+    if !is_video_basename(name) {
+        return None;
+    }
+    if name
+        .to_lowercase()
+        .split(['/', '\\'])
+        .any(|part| SKIP_DIRS.contains(&part.trim()))
+    {
+        return None;
+    }
+    parse_episode_from_path(Path::new(name))
 }
 
 fn strip_ext(name: &str) -> &str {

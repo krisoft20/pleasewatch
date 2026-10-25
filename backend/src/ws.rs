@@ -113,6 +113,7 @@ struct EpisodeFileProgress {
     season: i32,
     episode: i32,
     progress: f64,
+    wanted: bool,
     name: String,
 }
 
@@ -231,25 +232,24 @@ async fn collect(state: &Arc<AppState>) -> Vec<DownloadUpdate> {
                             season: ep.season,
                             episode: ep.episode,
                             progress,
+                            wanted: true,
                             name: d.title.clone().unwrap_or_default(),
                         });
                     }
                 } else if let Ok(files) = q.files(hash).await {
                     for f in files {
-                        let lower = f.name.to_lowercase();
-                        if !is_video(&lower) || is_bonus(&lower) {
+                        let Some((season, episode)) =
+                            crate::downloads::pack_episode_from_name(&f.name)
+                        else {
                             continue;
-                        }
-                        if let Some((s, e)) =
-                            crate::downloads::parse_episode_from_path(std::path::Path::new(&lower))
-                        {
-                            episodes.push(EpisodeFileProgress {
-                                season: s,
-                                episode: e,
-                                progress: f.progress,
-                                name: f.name,
-                            });
-                        }
+                        };
+                        episodes.push(EpisodeFileProgress {
+                            season,
+                            episode,
+                            progress: f.progress,
+                            wanted: f.priority != 0,
+                            name: f.name,
+                        });
                     }
                 }
             }
@@ -270,30 +270,4 @@ async fn collect(state: &Arc<AppState>) -> Vec<DownloadUpdate> {
     }
 
     out
-}
-
-fn is_video(name: &str) -> bool {
-    matches!(
-        name.rsplit('.').next().unwrap_or(""),
-        "mkv" | "mp4" | "avi" | "mov" | "webm" | "m4v"
-    )
-}
-
-fn is_bonus(name: &str) -> bool {
-    const SKIP: &[&str] = &[
-        "featurettes",
-        "featurette",
-        "extras",
-        "extra",
-        "bonus",
-        "specials",
-        "special",
-        "behind the scenes",
-        "deleted scenes",
-        "interviews",
-        "samples",
-        "sample",
-    ];
-    name.split(['/', '\\'])
-        .any(|part| SKIP.contains(&part.trim()))
 }

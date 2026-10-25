@@ -29,6 +29,8 @@ pub struct Torrent {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TorrentFile {
+    #[serde(default)]
+    pub index: i64,
     pub name: String,
     #[serde(default)]
     pub size: i64,
@@ -348,6 +350,34 @@ impl Qbit {
         let url = format!("{}/api/v2/torrents/files?hash={hash}", self.base);
         let r = self.authed(|c| c.get(&url)).await?.error_for_status()?;
         r.json().await
+    }
+
+    pub async fn set_file_prio(
+        &self,
+        hash: &str,
+        ids: &[i64],
+        priority: i64,
+    ) -> reqwest::Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let list = ids
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("|");
+        let prio = priority.to_string();
+        self.authed(|c| {
+            c.post(format!("{}/api/v2/torrents/filePrio", self.base))
+                .form(&[
+                    ("hash", hash),
+                    ("id", list.as_str()),
+                    ("priority", prio.as_str()),
+                ])
+        })
+        .await?
+        .error_for_status()?;
+        Ok(())
     }
 
     pub async fn set_upload_limit(&self, hash: &str, bytes_per_sec: i64) -> reqwest::Result<()> {

@@ -5,6 +5,7 @@
     import { goto } from '$app/navigation';
     import {
         api,
+        type DownloadStatus,
         type MediaWithEpisodes,
         type TmdbDetail,
         type TmdbEpisode,
@@ -16,6 +17,7 @@
     import TopBar from '$lib/components/TopBar.svelte';
     import TrailerModal from '$lib/components/TrailerModal.svelte';
     import TorrentPicker from '$lib/components/TorrentPicker.svelte';
+    import PackFilesModal from '$lib/components/PackFilesModal.svelte';
     import CastModal from '$lib/components/CastModal.svelte';
     import CastRow from '$lib/components/CastRow.svelte';
     import CollectionControl from '$lib/components/CollectionControl.svelte';
@@ -29,7 +31,13 @@
         progress: number;
         state: string | null;
         title: string | null;
-        episodes: { season: number; episode: number; progress: number; name: string }[];
+        episodes: {
+            season: number;
+            episode: number;
+            progress: number;
+            wanted: boolean;
+            name: string;
+        }[];
         seeds?: number;
         peers?: number;
         dlspeed?: number;
@@ -51,6 +59,9 @@
     let activeDl = $state<WsUpdate | null>(null);
     let dlByEp = $state<Map<string, WsUpdate>>(new Map());
     let epProgress = $state<Map<string, number>>(new Map());
+    let epSkipped = $state<Map<string, boolean>>(new Map());
+    let dlRows = $state<DownloadStatus[]>([]);
+    let packFilesFor = $state<{ id: string; title: string } | null>(null);
     let watched = $state<Map<string, WatchProgress>>(new Map());
     let ws: WebSocket | null = null;
 
@@ -125,6 +136,13 @@
             if (hit !== undefined) return hit;
         }
         return undefined;
+    }
+    function skippedForEpisode(virtualSeason: number, episode: number) {
+        for (const slot of episodeSlots(virtualSeason, episode)) {
+            const hit = epSkipped.get(epKey(slot.season, slot.episode));
+            if (hit !== undefined) return hit;
+        }
+        return false;
     }
     function downloadForEpisode(virtualSeason: number, episode: number) {
         for (const slot of episodeSlots(virtualSeason, episode)) {
@@ -321,6 +339,7 @@
         if (!media) return;
         try {
             const dls = await api.listDownloads();
+            dlRows = dls;
             const mine = dls.find(
                 (d) =>
                     d.media_id === media!.id &&
@@ -353,11 +372,13 @@
                     if (u.status === 'gone' || u.status === 'complete') {
                         activeDl = null;
                         epProgress = new Map();
+                        epSkipped = new Map();
                         const purged = new Map(dlByEp);
                         for (const [k, dl] of purged) {
                             if (dl.download_id === u.download_id) purged.delete(k);
                         }
                         dlByEp = purged;
+                        seedActiveDownload();
                         api.getMediaByTmdb('tv', tmdbId)
                             .then((m) => {
                                 media = m;
@@ -367,13 +388,22 @@
                     }
                     activeDl = u;
                     const next = new Map(epProgress);
+                    const nextSkipped = new Map(epSkipped);
                     const nextMap = new Map(dlByEp);
+                    for (const [k, dl] of nextMap) {
+                        if (dl.download_id !== u.download_id) continue;
+                        next.delete(k);
+                        nextSkipped.delete(k);
+                        nextMap.delete(k);
+                    }
                     for (const e of u.episodes ?? []) {
                         const k = `S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}`;
                         next.set(k, e.progress);
+                        nextSkipped.set(k, !e.wanted);
                         nextMap.set(k, u);
                     }
                     epProgress = next;
+                    epSkipped = nextSkipped;
                     dlByEp = nextMap;
                     dirty = true;
                 }
@@ -659,6 +689,29 @@
         }
         return seasonEpisodeFiles(activeSeason).some((e) => e.status === 'processing' || e.status === 'downloading');
     });
+
+    const packDownload = $derived.by(() => {
+        const m = media;
+        if (!m) return null;
+        return (
+            dlRows.find(
+                (d) =>
+                    d.media_id === m.id &&
+                    !d.episode_id &&
+                    (d.status === 'queued' || d.status === 'downloading' || d.status === 'processing')
+            ) ?? null
+        );
+    });
+
+    function openPackFiles() {
+        if (!packDownload) return;
+        packFilesFor = {
+            id: packDownload.id,
+            title:
+                packDownload.title ??
+                `${title} S${String(activeSeason ?? 0).padStart(2, '0')}`
+        };
+    }
     const seasonHasAny = $derived(activeSeason !== null && (readyInSeason(activeSeason) > 0 || seasonDownloadActive));
 
     const isAdmin = $derived(user?.role === 'admin');
@@ -1067,6 +1120,30 @@
                                         {t('media.download_season')}
                                     </button>
                                 {/if}
+                                {#if packDownload && canManage}
+                                    <button
+                                        class="pw-season-action"
+                                        onclick={openPackFiles}
+                                        aria-label={t('media.skip_episodes')}
+                                    >
+                                        <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            ><path d="M9 6h11M9 12h11M9 18h11" /><path
+                                                d="M4 6l1.5 1.5L8 5"
+                                            /><path d="M4 12l1.5 1.5L8 11" /><path
+                                                d="M4 18l1.5 1.5L8 17"
+                                            /></svg
+                                        >
+                                        {t('media.skip_episodes')}
+                                    </button>
+                                {/if}
                                 {#if seasonHasAny && canManage}
                                     <button
                                         class="pw-season-icon is-danger"
@@ -1175,12 +1252,17 @@
                                         {@const displayEp = displayEpisodeFor(activeSeason ?? 1, ep.episode_number)}
                                         {@const epDl = progressForEpisode(activeSeason ?? -1, ep.episode_number)}
                                         {@const epDlInfo = downloadForEpisode(activeSeason ?? -1, ep.episode_number)}
+                                        {@const isSkipped = skippedForEpisode(activeSeason ?? -1, ep.episode_number)}
                                         {@const isReady = !!stored?.file_path}
                                         {@const isProcessing =
                                             stored?.status === 'processing' ||
                                             (epDl !== undefined && epDl >= 1 && !isReady)}
                                         {@const isDownloading =
-                                            !isReady && !isProcessing && epDl !== undefined && epDl < 1}
+                                            !isReady &&
+                                            !isProcessing &&
+                                            !isSkipped &&
+                                            epDl !== undefined &&
+                                            epDl < 1}
                                         {@const dlPct = epDl !== undefined ? Math.round(epDl * 100) : 0}
                                         {@const ringR = 18}
                                         {@const ringC = 2 * Math.PI * ringR}
@@ -1217,7 +1299,7 @@
                                                         alt={ep.name}
                                                         loading="lazy"
                                                         decoding="async"
-                                                        class:dim={isDownloading || isProcessing || isWatched}
+                                                        class:dim={isDownloading || isProcessing || isWatched || isSkipped}
                                                     />{/if}
                                                 <div class="pw-ep-num">E{String(displayEp).padStart(2, '0')}</div>
 
@@ -1342,6 +1424,8 @@
                                                             >
                                                         </button>
                                                     {/if}
+                                                {:else if isSkipped}
+                                                    <div class="pw-ep-skip">{t('media.skipped')}</div>
                                                 {:else if user}
                                                     <button
                                                         class="pw-ep-dl"
@@ -1595,6 +1679,14 @@
                 } catch {}
                 seedActiveDownload();
             }}
+        />
+    {/if}
+
+    {#if packFilesFor}
+        <PackFilesModal
+            downloadId={packFilesFor.id}
+            title={packFilesFor.title}
+            onClose={() => (packFilesFor = null)}
         />
     {/if}
 {/if}

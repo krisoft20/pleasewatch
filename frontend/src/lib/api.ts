@@ -1131,6 +1131,14 @@ export const api = {
 
     cancelDownload: (id: string) => request<void>(`/api/downloads/${id}`, { method: 'DELETE' }),
 
+    packFiles: (id: string) => request<PackFile[]>(`/api/downloads/${id}/files`),
+
+    setPackFile: (id: string, index: number, wanted: boolean) =>
+        request<void>(`/api/downloads/${id}/files`, {
+            method: 'POST',
+            body: JSON.stringify({ index, wanted })
+        }),
+
     getSettings: () => request<AdminSettings>('/api/admin/settings'),
 
     updateSettings: (body: Partial<AdminSettingsUpdate>) =>
@@ -1450,4 +1458,14 @@ export type Download = {
 export type DownloadStatus = Download & {
     progress: number;
     state: string | null;
+};
+
+export type PackFile = {
+    index: number;
+    season: number;
+    episode: number;
+    name: string;
+    size: number;
+    progress: number;
+    wanted: boolean;
 };
