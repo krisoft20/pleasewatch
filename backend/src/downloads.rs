@@ -906,6 +906,7 @@ async fn poll_once(state: &Arc<AppState>) -> Result<(), String> {
                 .ok()
                 .map(|fs| {
                     fs.into_iter()
+                        .filter(|f| f.priority != 0)
                         .map(|f| {
                             let bn = std::path::Path::new(&f.name)
                                 .file_name()

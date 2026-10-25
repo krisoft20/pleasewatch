@@ -33,6 +33,8 @@ pub struct TorrentFile {
     #[serde(default)]
     pub size: i64,
     pub progress: f64,
+    #[serde(default)]
+    pub priority: i32,
 }
 
 impl Qbit {
