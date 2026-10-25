@@ -1299,7 +1299,7 @@
                                                         alt={ep.name}
                                                         loading="lazy"
                                                         decoding="async"
-                                                        class:dim={isDownloading || isProcessing || isWatched || isSkipped}
+                                                        class:dim={isDownloading || isProcessing || isWatched}
                                                     />{/if}
                                                 <div class="pw-ep-num">E{String(displayEp).padStart(2, '0')}</div>
 
@@ -1424,8 +1424,6 @@
                                                             >
                                                         </button>
                                                     {/if}
-                                                {:else if isSkipped}
-                                                    <div class="pw-ep-skip">{t('media.skipped')}</div>
                                                 {:else if user}
                                                     <button
                                                         class="pw-ep-dl"
