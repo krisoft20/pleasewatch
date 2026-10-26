@@ -3754,6 +3754,8 @@ input {
     position: absolute;
     right: 14px;
     top: 50%;
+    width: 14px;
+    height: 14px;
     transform: translateY(-50%);
     color: rgba(220, 220, 225, 0.55);
     pointer-events: none;
