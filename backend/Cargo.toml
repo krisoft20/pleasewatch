@@ -21,7 +21,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 rand = "0.8"
 sha2 = "0.10"
-argon2 = "0.5"
+argon2 = "0.6"
 time = "0.3"
 reqwest = { version = "0.12", features = ["json", "multipart", "cookies", "rustls-tls", "stream", "gzip"] }
 bytes = "1"
