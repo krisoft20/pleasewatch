@@ -8,9 +8,11 @@
     import { category, CATEGORIES, type Category } from '$lib/category.svelte';
     import { clickOutside } from '$lib/dismiss';
     import UserMenu from '$lib/components/UserMenu.svelte';
+    import InboxList from '$lib/components/InboxList.svelte';
+    import { inbox } from '$lib/inbox.svelte';
 
     let user = $state<User | null>(null);
-    let sheet = $state<'cat' | 'search' | 'me' | null>(null);
+    let sheet = $state<'cat' | 'search' | 'inbox' | 'me' | null>(null);
 
     const NO_BAR = ['/login', '/register', '/onboarding', '/watch', '/party', '/read'];
     const hidden = $derived(NO_BAR.some((p) => page.url.pathname.startsWith(p)));
@@ -22,6 +24,10 @@
                 user = u;
             })
             .catch(() => {});
+    });
+
+    $effect(() => {
+        if (user && !hidden) return inbox.start();
     });
 
     let q = $state('');
@@ -40,9 +46,10 @@
         bookHits = [];
     }
 
-    function toggle(s: 'cat' | 'search' | 'me') {
+    function toggle(s: 'cat' | 'search' | 'inbox' | 'me') {
         sheet = sheet === s ? null : s;
         if (sheet === 'search') tick().then(() => searchInput?.focus());
+        if (sheet === 'inbox') inbox.markSeen();
     }
 
     function pickCategory(c: Category) {
@@ -128,6 +135,32 @@
             </svg>
             <span>{t('nav.search')}</span>
         </button>
+        <button
+            class="pw-bb-item"
+            class:is-on={sheet === 'inbox'}
+            aria-expanded={sheet === 'inbox'}
+            onclick={() => toggle('inbox')}
+        >
+            <span class="pw-bb-bell">
+                <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    ><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path
+                        d="M13.73 21a2 2 0 0 1-3.46 0"
+                    /></svg
+                >
+                {#if inbox.unread > 0}
+                    <span class="pw-avatar-dot">{inbox.unread > 9 ? '9+' : inbox.unread}</span>
+                {/if}
+            </span>
+            <span>{t('inbox.tab')}</span>
+        </button>
         <button class="pw-bb-item" class:is-on={sheet === 'me'} onclick={() => toggle('me')}>
             <span class="pw-bb-ava">{initial}</span>
             <span>{t('nav.profile')}</span>
@@ -156,6 +189,12 @@
                         {/if}
                     </button>
                 {/each}
+            </div>
+        </div>
+    {:else if sheet === 'inbox'}
+        <div class="pw-bb-scrim">
+            <div class="pw-bb-sheet pw-bb-sheet-menu" use:clickOutside={close}>
+                <InboxList onpick={close} />
             </div>
         </div>
     {:else if sheet === 'me'}
@@ -342,6 +381,14 @@
     }
     .pw-bb-item.is-on {
         color: var(--pw-accent);
+    }
+    .pw-bb-bell {
+        position: relative;
+        display: flex;
+    }
+    .pw-bb-bell .pw-avatar-dot {
+        top: -5px;
+        right: -9px;
     }
     .pw-bb-ava {
         width: 19px;

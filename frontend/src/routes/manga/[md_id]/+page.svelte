@@ -13,6 +13,7 @@
     } from '$lib/api';
     import { t } from '$lib/i18n.svelte';
     import TopBar from '$lib/components/TopBar.svelte';
+    import ShareButton from '$lib/components/ShareButton.svelte';
 
     const mdId = $derived(page.params.md_id ?? '');
 
@@ -365,6 +366,7 @@
                                             {t('manga.lib.add')}
                                         {/if}
                                     </button>
+                                    <ShareButton kind="manga" key={mdId} {title} cover={detail.manga.cover_url} />
                                     {#if anime && animeHref(anime)}
                                         <a class="pw-link-chip pw-anime-chip" href={animeHref(anime)}>
                                             <svg

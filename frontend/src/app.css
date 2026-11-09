@@ -1509,6 +1509,37 @@ input {
     border: 2px solid rgba(8, 9, 12, 0.95);
     line-height: 1;
 }
+.pw-bell-wrap {
+    position: relative;
+}
+.pw-bell {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: rgba(220, 220, 225, 0.7);
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease;
+}
+.pw-bell:hover,
+.pw-bell.is-open {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #ececef;
+}
+.pw-bell .pw-avatar-dot {
+    top: 2px;
+    right: 1px;
+}
+.pw-bell-menu {
+    width: 300px;
+}
 .pw-search-row {
     display: contents;
 }

@@ -1,6 +1,6 @@
 use crate::models::{
     Book, BookContinueItem, BookMark, BookProgress, BookShelfItem, CollectionItem, Download,
-    Episode, Manga, MangaContinueItem, MangaProgress, Media, User,
+    Episode, Manga, MangaContinueItem, MangaProgress, Media, Share, User,
 };
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
@@ -794,6 +794,24 @@ impl Database {
                AND created_at < datetime('now', '-30 days')",
             [],
         )?;
+
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS shares (
+                id          TEXT PRIMARY KEY,
+                from_user   TEXT NOT NULL,
+                to_user     TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                ref_key     TEXT NOT NULL,
+                title       TEXT NOT NULL,
+                cover_url   TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                seen_at     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_shares_to ON shares(to_user, created_at DESC);",
+        )?;
+        if !self.has_column("shares", "note")? {
+            self.conn.execute("ALTER TABLE shares ADD COLUMN note TEXT", [])?;
+        }
 
         Ok(())
     }
@@ -2198,6 +2216,66 @@ impl Database {
                 chapters: row.get(10)?,
             })
         })?;
+        rows.collect()
+    }
+
+    pub fn create_share(
+        &self,
+        from: &str,
+        to: &str,
+        kind: &str,
+        key: &str,
+        title: &str,
+        cover_url: Option<&str>,
+        note: Option<&str>,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO shares (id, from_user, to_user, kind, ref_key, title, cover_url, note)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![uuid::Uuid::new_v4().to_string(), from, to, kind, key, title, cover_url, note],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_shares(&self, user_id: &str) -> Result<Vec<Share>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.id, COALESCE(u.username, '?'), s.kind, s.ref_key, s.title, s.cover_url,
+                    s.created_at, s.seen_at IS NOT NULL, s.note
+             FROM shares s LEFT JOIN users u ON u.id = s.from_user
+             WHERE s.to_user = ?1
+             ORDER BY s.created_at DESC
+             LIMIT 50",
+        )?;
+        let rows = stmt.query_map(params![user_id], |row| {
+            Ok(Share {
+                id: row.get(0)?,
+                from_name: row.get(1)?,
+                kind: row.get(2)?,
+                ref_key: row.get(3)?,
+                title: row.get(4)?,
+                cover_url: row.get(5)?,
+                created_at: row.get(6)?,
+                seen: row.get(7)?,
+                note: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn mark_shares_seen(&self, user_id: &str) -> Result<usize> {
+        self.conn.execute(
+            "UPDATE shares SET seen_at = datetime('now') WHERE to_user = ?1 AND seen_at IS NULL",
+            params![user_id],
+        )
+    }
+
+    pub fn list_share_targets(&self, user_id: &str) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, username FROM users
+             WHERE id != ?1 AND role != 'pending'
+             ORDER BY username COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect()
     }
 

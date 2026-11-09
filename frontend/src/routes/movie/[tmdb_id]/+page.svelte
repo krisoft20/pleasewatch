@@ -20,6 +20,7 @@
     import CollectionRow from '$lib/components/CollectionRow.svelte';
     import CollectionControl from '$lib/components/CollectionControl.svelte';
     import TmdbShelf from '$lib/components/TmdbShelf.svelte';
+    import ShareButton from '$lib/components/ShareButton.svelte';
     import { t } from '$lib/i18n.svelte';
 
     type WsUpdate = {
@@ -634,6 +635,7 @@
                                             {t('media.trailer')}
                                         </button>
                                     {/if}
+                                    <ShareButton kind="movie" key={String(tmdbId)} {title} cover={poster} />
                                     {#if inLibrary && canManage}
                                         <button class="pw-v1-btn-lib" onclick={remove}>
                                             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"

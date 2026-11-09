@@ -324,6 +324,19 @@ pub struct BookMark {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct Share {
+    pub id: String,
+    pub from_name: String,
+    pub kind: String,
+    pub ref_key: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub created_at: String,
+    pub seen: bool,
+    pub note: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Episode {
     pub id: String,

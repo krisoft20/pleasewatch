@@ -8,6 +8,8 @@
     import { abbrOf, darkLogo, ink, livePick, pairColors } from '$lib/live.svelte';
     import { clickOutside } from '$lib/dismiss';
     import UserMenu from '$lib/components/UserMenu.svelte';
+    import InboxList from '$lib/components/InboxList.svelte';
+    import { inbox } from '$lib/inbox.svelte';
 
     type Tab = { key: string; label: string };
 
@@ -250,6 +252,14 @@
     });
 
     let catOpen = $state(false);
+    let bellOpen = $state(false);
+
+    $effect(() => inbox.start());
+
+    function toggleBell() {
+        bellOpen = !bellOpen;
+        if (bellOpen) inbox.markSeen();
+    }
 
     function pickCategory(c: Category) {
         catOpen = false;
@@ -731,6 +741,38 @@
         </div>
 
         <div class="pw-tb-right">
+            <div class="pw-bell-wrap" use:clickOutside={() => (bellOpen = false)}>
+                <button
+                    class="pw-bell"
+                    class:is-open={bellOpen}
+                    onclick={toggleBell}
+                    aria-haspopup="true"
+                    aria-expanded={bellOpen}
+                    aria-label={inbox.unread > 0 ? `${t('inbox.tab')}, ${inbox.unread}` : t('inbox.tab')}
+                >
+                    <svg
+                        width="17"
+                        height="17"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        ><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path
+                            d="M13.73 21a2 2 0 0 1-3.46 0"
+                        /></svg
+                    >
+                    {#if inbox.unread > 0}
+                        <span class="pw-avatar-dot">{inbox.unread > 9 ? '9+' : inbox.unread}</span>
+                    {/if}
+                </button>
+                {#if bellOpen}
+                    <div class="pw-menu pw-bell-menu">
+                        <InboxList onpick={() => (bellOpen = false)} />
+                    </div>
+                {/if}
+            </div>
             <div class="pw-topbar-user" bind:this={menuRef} style="position: relative;">
                 <button
                     class="pw-user-btn"

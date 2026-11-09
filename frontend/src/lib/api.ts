@@ -1011,6 +1011,21 @@ export const api = {
         return res.json();
     },
 
+    shares: () => request<{ items: Share[]; unread: number }>('/api/shares'),
+
+    shareUsers: () => request<{ id: string; username: string }[]>('/api/shares/users'),
+
+    shareSend: (body: {
+        to: string;
+        kind: ShareKind;
+        key: string;
+        title: string;
+        cover_url?: string | null;
+        note?: string;
+    }) => request<{ ok: boolean }>('/api/shares', { method: 'POST', body: JSON.stringify(body) }),
+
+    sharesSeen: () => request<{ ok: boolean }>('/api/shares/seen', { method: 'POST' }),
+
     bookFileUrl: (ol_key: string) => `/api/books/${ol_key}/file`,
 
     bookDownloadUrl: (ol_key: string) => `/api/books/${ol_key}/file?dl=1`,
@@ -1477,4 +1492,18 @@ export type PackFile = {
     size: number;
     progress: number;
     wanted: boolean;
+};
+
+export type ShareKind = 'book' | 'movie' | 'tv' | 'manga';
+
+export type Share = {
+    id: string;
+    from_name: string;
+    kind: ShareKind;
+    ref_key: string;
+    title: string;
+    cover_url: string | null;
+    created_at: string;
+    seen: boolean;
+    note: string | null;
 };

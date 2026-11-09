@@ -31,6 +31,7 @@ mod prowlarr_proxy;
 mod qbit;
 mod rate_limit;
 mod search;
+mod shares;
 mod stream;
 mod subs;
 mod tmdb;
@@ -259,6 +260,7 @@ async fn main() {
         .merge(manga::routes(state.clone()))
         .merge(books::routes(state.clone()))
         .merge(collection::routes(state.clone()))
+        .merge(shares::routes(state.clone()))
         .merge(clips::routes(state.clone()))
         .merge(clips::public_routes())
         .merge(party::routes(state.clone()))

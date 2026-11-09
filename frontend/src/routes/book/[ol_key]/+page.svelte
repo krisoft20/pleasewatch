@@ -9,6 +9,7 @@
     import TopBar from '$lib/components/TopBar.svelte';
     import TorrentPicker from '$lib/components/TorrentPicker.svelte';
     import AuthorModal from '$lib/components/AuthorModal.svelte';
+    import ShareButton from '$lib/components/ShareButton.svelte';
 
     const olKey = $derived(page.params.ol_key ?? '');
 
@@ -667,6 +668,13 @@
                                         >
                                         {detail.shelf ? t('books.shelf.' + detail.shelf) : t('books.shelf.want')}
                                     </button>
+
+                                    <ShareButton
+                                        kind="book"
+                                        key={olKey}
+                                        title={detail.book.title}
+                                        cover={detail.book.cover_url}
+                                    />
 
                                     {#if !detail.book.file_path}
                                         <button
