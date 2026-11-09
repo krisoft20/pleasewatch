@@ -810,7 +810,8 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_shares_to ON shares(to_user, created_at DESC);",
         )?;
         if !self.has_column("shares", "note")? {
-            self.conn.execute("ALTER TABLE shares ADD COLUMN note TEXT", [])?;
+            self.conn
+                .execute("ALTER TABLE shares ADD COLUMN note TEXT", [])?;
         }
 
         Ok(())
@@ -2232,7 +2233,16 @@ impl Database {
         self.conn.execute(
             "INSERT INTO shares (id, from_user, to_user, kind, ref_key, title, cover_url, note)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![uuid::Uuid::new_v4().to_string(), from, to, kind, key, title, cover_url, note],
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                from,
+                to,
+                kind,
+                key,
+                title,
+                cover_url,
+                note
+            ],
         )?;
         Ok(())
     }
@@ -3720,6 +3730,7 @@ mod tests {
                 cover_url TEXT,
                 authors TEXT,
                 pages INTEGER,
+                chapters INTEGER,
                 subjects TEXT,
                 added_by TEXT,
                 added_at TEXT NOT NULL

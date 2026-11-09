@@ -470,7 +470,11 @@ async fn handle_upload_local(
     };
 
     if !has_video_stream(&src).await {
-        println!("[upload] rejected {} from {}, no video stream", src.display(), auth.username);
+        println!(
+            "[upload] rejected {} from {}, no video stream",
+            src.display(),
+            auth.username
+        );
         let _ = std::fs::remove_dir_all(&staging_dir);
         return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "not a video file");
     }

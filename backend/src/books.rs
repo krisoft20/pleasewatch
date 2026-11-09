@@ -3200,7 +3200,9 @@ fn epub_counts(path: &std::path::Path) -> Option<(i64, i64)> {
     let file = std::fs::File::open(path).ok()?;
     let mut zip = zip::ZipArchive::new(file).ok()?;
     let container = read_entry(&mut zip, "META-INF/container.xml")?;
-    let opf_path = tags(&container, "rootfile").into_iter().find_map(|t| attr(t, "full-path"))?;
+    let opf_path = tags(&container, "rootfile")
+        .into_iter()
+        .find_map(|t| attr(t, "full-path"))?;
     let opf = read_entry(&mut zip, &opf_path)?;
     let base = opf_path.rfind('/').map_or("", |i| &opf_path[..=i]);
 
@@ -3210,7 +3212,11 @@ fn epub_counts(path: &std::path::Path) -> Option<(i64, i64)> {
         let (Some(id), Some(href)) = (attr(t, "id"), attr(t, "href")) else {
             continue;
         };
-        let href = href.split('#').next().unwrap_or_default().replace("%20", " ");
+        let href = href
+            .split('#')
+            .next()
+            .unwrap_or_default()
+            .replace("%20", " ");
         let full = format!("{base}{href}");
         if attr(t, "properties").is_some_and(|p| p.split_whitespace().any(|x| x == "nav")) {
             nav = Some(full.clone());

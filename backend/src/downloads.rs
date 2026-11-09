@@ -1489,7 +1489,9 @@ async fn trim_files(
             .into_iter()
             .filter(|e| {
                 e.status == "ready"
-                    && e.file_path.as_deref().is_some_and(|p| Path::new(p).exists())
+                    && e.file_path
+                        .as_deref()
+                        .is_some_and(|p| Path::new(p).exists())
             })
             .map(|e| (e.season, e.episode))
             .collect()
