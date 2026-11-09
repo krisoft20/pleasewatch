@@ -417,6 +417,7 @@ impl Database {
             ("author_keys", "TEXT"),
             ("qbit_hash", "TEXT"),
             ("download_progress", "REAL"),
+            ("chapters", "INTEGER"),
         ] {
             if !self.has_column("books", col)? {
                 self.conn
@@ -1646,7 +1647,7 @@ impl Database {
             .query_row(
                 "SELECT id, ol_key, title, authors, description, cover_url, year, language,
                         file_path, ext, status, added_by, added_at,
-                        pages, subjects, isbn, publisher, rating, rating_count, enriched_at, series
+                        pages, subjects, isbn, publisher, rating, rating_count, enriched_at, series, chapters
                  FROM books WHERE ol_key = ?1",
                 params![ol_key],
                 map_book,
@@ -1696,7 +1697,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT id, ol_key, title, authors, description, cover_url, year, language,
                     file_path, ext, status, added_by, added_at,
-                    pages, subjects, isbn, publisher, rating, rating_count, enriched_at, series
+                    pages, subjects, isbn, publisher, rating, rating_count, enriched_at, series, chapters
              FROM books ORDER BY added_at DESC",
         )?;
         let rows = stmt.query_map([], map_book)?;
@@ -1707,7 +1708,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT id, ol_key, title, authors, description, cover_url, year, language,
                     file_path, ext, status, added_by, added_at,
-                    pages, subjects, isbn, publisher, rating, rating_count, enriched_at, series
+                    pages, subjects, isbn, publisher, rating, rating_count, enriched_at, series, chapters
              FROM books WHERE added_by = ?1 ORDER BY added_at DESC",
         )?;
         let rows = stmt.query_map(params![user_id], map_book)?;
@@ -1755,8 +1756,25 @@ impl Database {
 
     pub fn update_book_file(&self, ol_key: &str, path: &str, ext: &str) -> Result<()> {
         self.conn.execute(
-            "UPDATE books SET file_path = ?1, ext = ?2, status = 'ready' WHERE ol_key = ?3",
+            "UPDATE books SET file_path = ?1, ext = ?2, status = 'ready', chapters = NULL WHERE ol_key = ?3",
             params![path, ext, ol_key],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_books_without_counts(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ol_key, file_path FROM books
+             WHERE chapters IS NULL AND file_path IS NOT NULL AND lower(ext) = 'epub'",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
+    pub fn set_book_counts(&self, ol_key: &str, chapters: i64, pages: Option<i64>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE books SET chapters = ?1, pages = COALESCE(pages, ?2) WHERE ol_key = ?3",
+            params![chapters, pages, ol_key],
         )?;
         Ok(())
     }
@@ -2157,7 +2175,8 @@ impl Database {
                         ELSE NULL
                     END AS effective_finished_at,
                     p.percent,
-                    COALESCE(s.showcased, 0)
+                    COALESCE(s.showcased, 0),
+                    b.chapters
              FROM books b
              LEFT JOIN book_shelf s ON s.ol_key = b.ol_key AND s.user_id = ?1
              LEFT JOIN book_progress p ON p.ol_key = b.ol_key AND p.user_id = ?1
@@ -2176,6 +2195,7 @@ impl Database {
                 finished_at: row.get(7)?,
                 percent: row.get(8)?,
                 showcased: row.get::<_, i64>(9)? != 0,
+                chapters: row.get(10)?,
             })
         })?;
         rows.collect()
@@ -3132,6 +3152,7 @@ fn map_book(row: &rusqlite::Row) -> Result<Book> {
         rating_count: row.get(18)?,
         enriched_at: row.get(19)?,
         series: row.get(20)?,
+        chapters: row.get(21)?,
     })
 }
 

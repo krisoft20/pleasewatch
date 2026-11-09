@@ -574,6 +574,7 @@ async fn find_or_create_book(
         rating_count: None,
         enriched_at: None,
         series: None,
+        chapters: None,
     };
 
     let db = state.db.lock().await;
@@ -736,6 +737,7 @@ async fn handle_detail(
         rating_count,
         enriched_at: None,
         series: meta.series,
+        chapters: None,
     };
 
     Json(serde_json::json!({
@@ -3166,6 +3168,194 @@ fn book_mime(ext: &str) -> &'static str {
 
 fn abs_path(media_root: &str, rel: &str) -> std::path::PathBuf {
     std::path::Path::new(media_root).join(rel)
+}
+
+pub fn spawn_counts(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        loop {
+            let todo = {
+                let db = state.db.lock().await;
+                db.list_books_without_counts().unwrap_or_default()
+            };
+            for (key, rel) in todo {
+                let abs = abs_path(&state.media_root, &rel);
+                let (chapters, words) = tokio::task::spawn_blocking(move || epub_counts(&abs))
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or((0, 0));
+                let pages = (words > 0).then(|| (words + 274) / 275);
+                println!("[books] counted {key}: {chapters} chapters, {words} words");
+                let db = state.db.lock().await;
+                if let Err(e) = db.set_book_counts(&key, chapters, pages) {
+                    eprintln!("[books] counts save failed for {key}: {e}");
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(300)).await;
+        }
+    });
+}
+
+fn epub_counts(path: &std::path::Path) -> Option<(i64, i64)> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut zip = zip::ZipArchive::new(file).ok()?;
+    let container = read_entry(&mut zip, "META-INF/container.xml")?;
+    let opf_path = tags(&container, "rootfile").into_iter().find_map(|t| attr(t, "full-path"))?;
+    let opf = read_entry(&mut zip, &opf_path)?;
+    let base = opf_path.rfind('/').map_or("", |i| &opf_path[..=i]);
+
+    let mut hrefs = HashMap::new();
+    let mut nav = None;
+    for t in tags(&opf, "item") {
+        let (Some(id), Some(href)) = (attr(t, "id"), attr(t, "href")) else {
+            continue;
+        };
+        let href = href.split('#').next().unwrap_or_default().replace("%20", " ");
+        let full = format!("{base}{href}");
+        if attr(t, "properties").is_some_and(|p| p.split_whitespace().any(|x| x == "nav")) {
+            nav = Some(full.clone());
+        }
+        hrefs.insert(id, full);
+    }
+    let spine: Vec<String> = tags(&opf, "itemref")
+        .into_iter()
+        .filter_map(|t| attr(t, "idref"))
+        .filter_map(|id| hrefs.get(&id).cloned())
+        .collect();
+
+    let mut words = 0;
+    for p in &spine {
+        if let Some(x) = read_entry(&mut zip, p) {
+            words += strip_tags(&x.replace('<', " <")).split_whitespace().count() as i64;
+        }
+    }
+
+    let mut titles = nav
+        .and_then(|p| read_entry(&mut zip, &p))
+        .map(|x| nav_titles(&x))
+        .unwrap_or_default();
+    if titles.is_empty() {
+        let ncx = tags(&opf, "spine")
+            .into_iter()
+            .find_map(|t| attr(t, "toc"))
+            .and_then(|id| hrefs.get(&id).cloned());
+        if let Some(x) = ncx.and_then(|p| read_entry(&mut zip, &p)) {
+            titles = ncx_titles(&x);
+        }
+    }
+    let chapters = titles.iter().filter(|t| !is_matter(t)).count() as i64;
+    Some((chapters, words))
+}
+
+fn read_entry(zip: &mut zip::ZipArchive<std::fs::File>, name: &str) -> Option<String> {
+    let mut f = zip.by_name(name).ok()?;
+    let mut s = String::new();
+    std::io::Read::read_to_string(&mut f, &mut s).ok()?;
+    Some(s)
+}
+
+fn tags<'a>(x: &'a str, name: &str) -> Vec<&'a str> {
+    let open = format!("<{name}");
+    let mut out = Vec::new();
+    let mut rest = x;
+    while let Some(i) = rest.find(&open) {
+        rest = &rest[i..];
+        let end = rest.find('>').map_or(rest.len(), |e| e + 1);
+        if rest[open.len()..].starts_with(|c: char| c.is_whitespace() || c == '/' || c == '>') {
+            out.push(&rest[..end]);
+        }
+        rest = &rest[open.len()..];
+    }
+    out
+}
+
+fn attr(tag: &str, name: &str) -> Option<String> {
+    for (i, _) in tag.match_indices(&format!("{name}=")) {
+        if !tag[..i].ends_with(char::is_whitespace) {
+            continue;
+        }
+        let v = &tag[i + name.len() + 1..];
+        let q = v.chars().next()?;
+        let v = &v[1..];
+        return v.find(q).map(|e| v[..e].to_string());
+    }
+    None
+}
+
+fn ncx_titles(x: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth = 0;
+    let mut rest = x;
+    while let Some(i) = rest.find('<') {
+        rest = &rest[i..];
+        if rest.starts_with("<navPoint") {
+            depth += 1;
+            if depth == 1 {
+                let t = rest.find("<text>").and_then(|s| {
+                    let t = &rest[s + 6..];
+                    t.find("</text>").map(|e| t[..e].trim().to_string())
+                });
+                out.push(t.unwrap_or_default());
+            }
+        } else if rest.starts_with("</navPoint") {
+            depth -= 1;
+        }
+        rest = &rest[1..];
+    }
+    out
+}
+
+fn nav_titles(x: &str) -> Vec<String> {
+    let Some(start) = x
+        .find("epub:type=\"toc\"")
+        .or_else(|| x.find("epub:type='toc'"))
+        .or_else(|| x.find("<nav"))
+    else {
+        return Vec::new();
+    };
+    let body = &x[start..];
+    let body = &body[..body.find("</nav>").unwrap_or(body.len())];
+    let mut out = Vec::new();
+    let mut depth = 0;
+    let mut rest = body;
+    while let Some(i) = rest.find('<') {
+        rest = &rest[i..];
+        if rest.starts_with("<ol") {
+            depth += 1;
+        } else if rest.starts_with("</ol") {
+            depth -= 1;
+        } else if rest.starts_with("<li") && depth == 1 {
+            let end = ["<ol", "<li", "</li>"]
+                .iter()
+                .filter_map(|m| rest[3..].find(m))
+                .min()
+                .map_or(rest.len(), |e| e + 3);
+            out.push(strip_tags(&rest[..end]).trim().to_string());
+        }
+        rest = &rest[1..];
+    }
+    out
+}
+
+fn is_matter(title: &str) -> bool {
+    let t = title.trim().to_lowercase();
+    t.is_empty()
+        || t == "cover"
+        || t == "title"
+        || [
+            "title page",
+            "preface",
+            "afterword",
+            "contents",
+            "table of contents",
+            "copyright",
+            "dedication",
+            "acknowledg",
+            "about the author",
+            "also by",
+        ]
+        .iter()
+        .any(|m| t.starts_with(m))
 }
 
 async fn proxy_image(url: &str, mime: &'static str) -> axum::response::Response {

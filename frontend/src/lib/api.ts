@@ -525,6 +525,7 @@ export type Book = {
     rating_count: number | null;
     enriched_at: string | null;
     series: string | null;
+    chapters: number | null;
 };
 
 export type BookHit = {
@@ -611,6 +612,7 @@ export type BookShelfItem = {
     showcased: boolean;
     finished_at: string | null;
     percent: number | null;
+    chapters: number | null;
 };
 
 export type DailyQuote = {

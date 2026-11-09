@@ -214,6 +214,7 @@ pub struct Book {
     pub rating_count: Option<i64>,
     pub enriched_at: Option<String>,
     pub series: Option<String>,
+    pub chapters: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,6 +292,7 @@ pub struct BookShelfItem {
     pub finished_at: Option<String>,
     pub percent: Option<f64>,
     pub showcased: bool,
+    pub chapters: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -230,6 +230,7 @@ async fn main() {
     qbit::spawn_dht_watchdog(state.clone());
     jackett::spawn_auto_setup(state.clone());
     prowlarr::spawn_auto_setup(state.clone());
+    books::spawn_counts(state.clone());
     live::spawn_refresher();
     tv::spawn_refresher();
     align::spawn_warmup();

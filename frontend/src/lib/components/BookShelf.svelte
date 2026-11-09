@@ -1,8 +1,16 @@
 <script lang="ts">
     import { goto, preloadData } from '$app/navigation';
     import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
+    import { plural, t } from '$lib/i18n.svelte';
 
-    type Item = { ol_key: string; title: string; cover_url: string | null; authors?: string | null };
+    type Item = {
+        ol_key: string;
+        title: string;
+        cover_url: string | null;
+        authors?: string | null;
+        pages?: number | null;
+        chapters?: number | null;
+    };
 
     let {
         title,
@@ -22,6 +30,13 @@
 
     function open(b: Item) {
         goto(`/book/${b.ol_key}`);
+    }
+
+    function meta(b: Item) {
+        const out = [];
+        if (b.pages) out.push(plural('books.meta.pages', b.pages));
+        if (b.chapters && b.chapters > 1) out.push(t('books.meta.ch', { n: b.chapters }));
+        return out.join(' · ');
     }
 </script>
 
@@ -87,6 +102,14 @@
                                 <path d="M6 18L18 6M6 6l12 12" />
                             </svg>
                         </button>
+                    {/if}
+
+                    {#if meta(b)}
+                        <span
+                            class="absolute top-2 left-2 max-w-[calc(100%-1rem)] h-6 flex items-center text-[10px] font-medium text-white/90 px-2 rounded bg-black/60 uppercase tracking-wide tabular-nums whitespace-nowrap overflow-hidden z-10"
+                        >
+                            {meta(b)}
+                        </span>
                     {/if}
 
                     {#if done?.has(b.ol_key)}
