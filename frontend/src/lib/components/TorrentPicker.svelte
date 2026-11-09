@@ -112,6 +112,9 @@
     let formQbitPass = $state('');
     let savingQbit = $state(false);
     let starting = $state<string | null>(null);
+    let rowErr = $state<Record<string, string>>({});
+    let nextErr = $state('');
+    let card = $state<HTMLDivElement>();
     type TorrentSource = 'jackett' | 'prowlarr' | 'ext';
     const allSources: TorrentSource[] = ['jackett', 'prowlarr', 'ext'];
     let aggFilter = $state<'all' | TorrentSource>('all');
@@ -175,6 +178,21 @@
         return () => document.removeEventListener('keydown', onKey);
     });
 
+    function trap(ev: KeyboardEvent) {
+        if (ev.key !== 'Tab' || !card) return;
+        const els = [...card.querySelectorAll<HTMLElement>('input, select, button:not(:disabled), a[href]')];
+        if (els.length === 0) return;
+        const first = els[0];
+        const last = els[els.length - 1];
+        if (ev.shiftKey && document.activeElement === first) {
+            ev.preventDefault();
+            last.focus();
+        } else if (!ev.shiftKey && document.activeElement === last) {
+            ev.preventDefault();
+            first.focus();
+        }
+    }
+
     function onBackdrop(ev: MouseEvent) {
         if (ev.target === ev.currentTarget) onClose();
     }
@@ -213,7 +231,6 @@
         loading = true;
         err = '';
         results = [];
-        aggFilter = 'all';
         const sources = allSources.filter((s) => s !== 'ext' || kind !== 'book');
         searching = [...sources];
         const finalQ = (q + langSuffix(lang)).trim();
@@ -269,7 +286,9 @@
     }
 
     async function start(t: TorrentOption) {
-        starting = t.provider_id || t.magnet;
+        const key = t.provider_id || t.magnet;
+        starting = key;
+        delete rowErr[key];
         const addBook = kind === 'book' && olKey;
         const req = {
             magnet: t.magnet,
@@ -301,8 +320,7 @@
             }
             onClose();
         } catch (caught) {
-            const msg = caught instanceof Error ? caught.message : 'failed to start';
-            alert(msg);
+            rowErr[key] = caught instanceof Error ? caught.message : 'failed to start';
         } finally {
             starting = null;
             lookingAhead = false;
@@ -363,6 +381,7 @@
     async function downloadNext() {
         if (!nextUp) return;
         addingNext = true;
+        nextErr = '';
         const picked = nextUp.hits.filter((h) => h.on);
         const started: number[] = [];
         for (const h of picked) {
@@ -378,14 +397,15 @@
                     torrent: h.t
                 });
                 started.push(h.ep);
+                h.on = false;
             } catch (caught) {
-                alert(caught instanceof Error ? caught.message : `failed to start e${h.ep}`);
+                nextErr = `E${String(h.ep).padStart(2, '0')}: ${caught instanceof Error ? caught.message : 'failed to start'}`;
                 break;
             }
         }
         if (started.length > 0) onMoreStarted?.(started);
         addingNext = false;
-        onClose();
+        if (!nextErr) onClose();
     }
 
     function fmtSize(bytes: number): string {
@@ -400,6 +420,68 @@
         return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${u[i]}`;
     }
 
+    type SortKey = 'best' | 'seeds' | 'big' | 'small';
+    const SORTS: [SortKey, string][] = [
+        ['best', 'best match'],
+        ['seeds', 'most seeds'],
+        ['big', 'largest'],
+        ['small', 'smallest']
+    ];
+    const QUALITY_ORDER = ['2160p', '1080p', '720p', '480p', 'unknown'];
+    const GB = 1024 ** 3;
+
+    let sortBy = $state<SortKey>('best');
+    let qualities = $state<Set<string>>(new Set());
+    let codecs = $state<Set<string>>(new Set());
+    let seededOnly = $state(false);
+
+    const qualityOf = (t: TorrentOption) => t.quality ?? 'unknown';
+    const huge = (t: TorrentOption) => t.size > (episode != null ? 20 : 80) * GB;
+
+    function toggle(set: Set<string>, v: string) {
+        const next = new Set(set);
+        if (!next.delete(v)) next.add(v);
+        return next;
+    }
+
+    function countBy(list: TorrentOption[], key: (t: TorrentOption) => string | null) {
+        const m = new Map<string, number>();
+        for (const t of list) {
+            const k = key(t);
+            if (k) m.set(k, (m.get(k) ?? 0) + 1);
+        }
+        return m;
+    }
+
+    const qualityCounts = $derived(
+        [...countBy(results, qualityOf)].sort((a, b) => QUALITY_ORDER.indexOf(a[0]) - QUALITY_ORDER.indexOf(b[0]))
+    );
+    const codecCounts = $derived([...countBy(results, (t) => t.video_codec)].sort((a, b) => b[1] - a[1]));
+    const sourceCounts = $derived([...countBy(results, (t) => t.aggregator ?? null)]);
+
+    const filtersOn = $derived(qualities.size > 0 || codecs.size > 0 || seededOnly || aggFilter !== 'all');
+
+    const shown = $derived.by(() => {
+        const list = results.filter(
+            (t) =>
+                (aggFilter === 'all' || t.aggregator === aggFilter) &&
+                (qualities.size === 0 || qualities.has(qualityOf(t))) &&
+                (codecs.size === 0 || (t.video_codec !== null && codecs.has(t.video_codec))) &&
+                (!seededOnly || t.seeds > 0)
+        );
+        if (sortBy === 'seeds') return list.sort((a, b) => b.seeds - a.seeds);
+        if (sortBy === 'big') return list.sort((a, b) => b.size - a.size);
+        if (sortBy === 'small') return list.sort((a, b) => (a.size || Infinity) - (b.size || Infinity));
+        return list;
+    });
+
+    function clearFilters() {
+        qualities = new Set();
+        codecs = new Set();
+        seededOnly = false;
+        aggFilter = 'all';
+    }
+
     const qualityClasses: Record<string, string> = {
         '2160p': 'pw-q-amber',
         '1080p': 'pw-q-green',
@@ -408,15 +490,16 @@
     };
 </script>
 
-<div
-    class="pw-tp-bg"
-    onclick={onBackdrop}
-    onkeydown={(e) => e.key === 'Escape' && onClose()}
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
->
-    <div class="pw-tp-card">
+<div class="pw-tp-bg" onclick={onBackdrop} role="presentation">
+    <div
+        class="pw-tp-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="download picker"
+        tabindex="-1"
+        bind:this={card}
+        onkeydown={trap}
+    >
         <header class="pw-tp-head">
             <input
                 bind:value={q}
@@ -434,10 +517,10 @@
                 aria-label="language"
                 title="search language hint"
             >
-                <option value="any">Any</option>
-                <option value="en">English</option>
-                <option value="pl">Polish</option>
-                <option value="de">German</option>
+                <option value="any">any</option>
+                <option value="en">english</option>
+                <option value="pl">polish</option>
+                <option value="de">german</option>
             </select>
             <button class="pw-tp-x" onclick={onClose} aria-label="close">
                 <svg
@@ -454,6 +537,45 @@
                 </svg>
             </button>
         </header>
+
+        {#if !envErr && !qbitErr && !lookingAhead && !nextUp && results.length > 0}
+            {#snippet chip(label: string, on: boolean, flip: () => void, n?: number)}
+                <button class="pw-tp-chip" class:on aria-pressed={on} onclick={flip}>
+                    {label}{#if n !== undefined}<small>{n}</small>{/if}
+                </button>
+            {/snippet}
+            <div class="pw-tp-filters">
+                <div class="pw-tp-chips">
+                    {#each qualityCounts as [k, n] (k)}
+                        {@render chip(k, qualities.has(k), () => (qualities = toggle(qualities, k)), n)}
+                    {/each}
+                    {#if codecCounts.length > 1}
+                        <span class="pw-tp-sep"></span>
+                        {#each codecCounts as [k, n] (k)}
+                            {@render chip(k, codecs.has(k), () => (codecs = toggle(codecs, k)), n)}
+                        {/each}
+                    {/if}
+                    {#if sourceCounts.length > 1}
+                        <span class="pw-tp-sep"></span>
+                        {#each sourceCounts as [k, n] (k)}
+                            {@render chip(
+                                k,
+                                aggFilter === k,
+                                () => (aggFilter = aggFilter === k ? 'all' : (k as TorrentSource)),
+                                n
+                            )}
+                        {/each}
+                    {/if}
+                    <span class="pw-tp-sep"></span>
+                    {@render chip('seeded only', seededOnly, () => (seededOnly = !seededOnly))}
+                </div>
+                <select bind:value={sortBy} class="pw-tp-lang pw-tp-sort" aria-label="sort">
+                    {#each SORTS as [k, label] (k)}
+                        <option value={k}>{label}</option>
+                    {/each}
+                </select>
+            </div>
+        {/if}
 
         {#if err}
             <div class="pw-tp-err">{err}</div>
@@ -644,10 +766,11 @@
                                 onclick={() => (h.on = !h.on)}
                             >
                                 <span>E{String(h.ep).padStart(2, '0')}</span>
-                                <small>S:{h.t.seeds}</small>
+                                <small>{h.t.seeds === 0 ? 'dead' : `${h.t.seeds} seeds`}</small>
                             </button>
                         {/each}
                     </div>
+                    {#if nextErr}<p class="pw-tp-rowerr pw-tp-next-err" role="alert">{nextErr}</p>{/if}
                     <div class="pw-tp-next-actions">
                         <button class="pw-tp-close" onclick={onClose} disabled={addingNext}>no thanks</button>
                         <button
@@ -674,33 +797,36 @@
                     </p>
                 </div>
             {:else}
-                {@const filtered = aggFilter === 'all' ? results : results.filter((r) => r.aggregator === aggFilter)}
-                {@const matched = filtered.filter((r) => (r.pref_score ?? 0) > 0)}
-                {@const rest = filtered.filter((r) => !((r.pref_score ?? 0) > 0))}
+                {@const split = sortBy === 'best'}
+                {@const matched = split ? shown.filter((r) => (r.pref_score ?? 0) > 0) : []}
+                {@const rest = split ? shown.filter((r) => !((r.pref_score ?? 0) > 0)) : shown}
                 {#snippet torrentRow(t: TorrentOption, pref: boolean)}
-                    {@const busy = starting === (t.provider_id || t.magnet)}
+                    {@const key = t.provider_id || t.magnet}
+                    {@const busy = starting === key}
+                    {@const extras = [...t.audio, t.subtitle_info, ...t.tags.slice(0, 4)].filter(Boolean)}
                     <div class="pw-tp-row" class:pw-tp-row-pref={pref}>
                         <div class="pw-tp-info">
                             <p class="pw-tp-title">{t.title}</p>
                             <div class="pw-tp-tags">
-                                <span class="pw-tp-pill pw-tp-prov">{t.provider}</span>
-                                {#if t.aggregator}<span class="pw-tp-pill pw-tp-agg-{t.aggregator}">{t.aggregator}</span
-                                    >{/if}
                                 {#if t.quality}<span class="pw-tp-pill {qualityClasses[t.quality] ?? 'pw-q-gray'}"
                                         >{t.quality}</span
                                     >{/if}
                                 {#if t.video_codec}<span class="pw-tp-pill pw-tp-codec">{t.video_codec}</span>{/if}
-                                {#each t.audio as a}<span class="pw-tp-pill pw-tp-audio">{a}</span>{/each}
-                                {#if t.subtitle_info}<span class="pw-tp-pill pw-tp-sub">{t.subtitle_info}</span>{/if}
                                 {#if t.release_group}<span class="pw-tp-pill pw-tp-grp">{t.release_group}</span>{/if}
-                                {#each t.tags.slice(0, 6) as tag}<span class="pw-tp-pill">{tag}</span>{/each}
-                                <span class="pw-tp-meta">{fmtSize(t.size)}</span>
-                                <span class="pw-tp-seeds">S:{t.seeds}</span>
-                                <span class="pw-tp-peers">P:{t.peers}</span>
+                                <span class="pw-tp-src">{t.provider}</span>
+                                {#if t.aggregator}<span class="pw-tp-eng pw-tp-eng-{t.aggregator}">{t.aggregator}</span>{/if}
                             </div>
+                            {#if extras.length > 0}<p class="pw-tp-extra">{extras.join(' · ')}</p>{/if}
+                            {#if rowErr[key]}<p class="pw-tp-rowerr" role="alert">couldn't start: {rowErr[key]}</p>{/if}
                         </div>
-                        <button class="pw-tp-dl" disabled={starting !== null} onclick={() => start(t)}>
-                            {busy ? 'adding...' : 'download'}
+                        <div class="pw-tp-nums">
+                            <span class="pw-tp-size" class:is-huge={huge(t)}>{fmtSize(t.size)}</span>
+                            <span class="pw-tp-seeds" class:is-dead={t.seeds === 0} title="{t.seeds} seeds, {t.peers} peers"
+                                >{t.seeds === 0 ? 'dead' : `${t.seeds} seeds`}</span
+                            >
+                        </div>
+                        <button class="pw-tp-get" disabled={starting !== null} onclick={() => start(t)}>
+                            {busy ? 'adding...' : rowErr[key] ? 'retry' : 'download'}
                         </button>
                     </div>
                 {/snippet}
@@ -714,28 +840,24 @@
                     <div class="pw-tp-section-head pw-tp-section-rest">all results</div>
                 {/if}
                 {#each rest as t (t.provider_id + t.magnet)}
-                    {@render torrentRow(t, false)}
+                    {@render torrentRow(t, !split && (t.pref_score ?? 0) > 0)}
                 {/each}
+                {#if shown.length === 0}
+                    <div class="pw-tp-empty">
+                        <p>nothing matches these filters</p>
+                        <button class="pw-tp-close" onclick={clearFilters}>clear filters</button>
+                    </div>
+                {/if}
             {/if}
         </div>
 
         {#if !envErr && !loading && !lookingAhead && !nextUp && results.length > 0}
-            {@const aggCounts = allSources
-                .map((s) => [s, results.filter((r) => r.aggregator === s).length] as const)
-                .filter(([, n]) => n > 0)}
             <footer class="pw-tp-foot">
                 <span>
-                    {results.length} results
+                    {filtersOn ? `${shown.length} of ${results.length}` : results.length} results
+                    {#if filtersOn}<button class="pw-tp-reset" onclick={clearFilters}>reset</button>{/if}
                     {#if searching.length > 0}<span class="pw-tp-more">checking {searching.join(' + ')}...</span>{/if}
                 </span>
-                {#if aggCounts.length > 1}
-                    <div class="pw-tp-agg-tabs">
-                        <button class:on={aggFilter === 'all'} onclick={() => (aggFilter = 'all')}>all</button>
-                        {#each aggCounts as [s, n] (s)}
-                            <button class:on={aggFilter === s} onclick={() => (aggFilter = s)}>{s} ({n})</button>
-                        {/each}
-                    </div>
-                {/if}
                 <button class="pw-tp-close" onclick={onClose}>close</button>
             </footer>
         {/if}
@@ -810,7 +932,8 @@
         color: rgba(220, 220, 225, 0.32);
     }
     .pw-tp-lang {
-        background: rgba(255, 255, 255, 0.04);
+        color-scheme: dark;
+        background: #1a1c21;
         border: 1px solid rgba(255, 255, 255, 0.08);
         color: rgba(232, 232, 234, 0.85);
         font-size: 12px;
@@ -823,8 +946,12 @@
             border-color 0.14s ease;
     }
     .pw-tp-lang:hover {
-        background: rgba(255, 255, 255, 0.07);
+        background: #22252b;
         border-color: rgba(255, 255, 255, 0.14);
+    }
+    .pw-tp-lang option {
+        background: #16181d;
+        color: #ececef;
     }
     .pw-tp-lang:focus {
         border-color: color-mix(in oklch, var(--pw-accent) 50%, transparent);
@@ -901,7 +1028,7 @@
 
     .pw-tp-row {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         gap: 12px;
         padding: 10px 12px;
         border-radius: 8px;
@@ -964,17 +1091,17 @@
         margin: 10px 12px 4px;
     }
     .pw-tp-row-pref {
-        background: rgba(192, 132, 252, 0.04);
+        background: color-mix(in oklch, var(--pw-accent) 5%, transparent);
     }
     .pw-tp-row-pref:hover {
-        background: rgba(192, 132, 252, 0.08);
+        background: color-mix(in oklch, var(--pw-accent) 9%, transparent);
     }
     .pw-tp-section-head {
         font-size: 10px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        color: rgba(192, 132, 252, 0.85);
+        color: var(--pw-accent);
         padding: 12px 18px 6px;
     }
     .pw-tp-section-rest {
@@ -1007,10 +1134,6 @@
         color: rgba(220, 220, 225, 0.65);
         letter-spacing: 0.01em;
     }
-    .pw-tp-prov {
-        color: rgba(220, 220, 225, 0.55);
-        background: rgba(255, 255, 255, 0.04);
-    }
     .pw-q-green {
         background: color-mix(in oklch, oklch(0.62 0.16 150) 75%, black);
         color: white;
@@ -1031,69 +1154,173 @@
         color: oklch(0.8 0.1 220);
         background: color-mix(in oklch, oklch(0.65 0.13 240) 22%, transparent);
     }
-    .pw-tp-audio {
-        color: oklch(0.8 0.13 290);
-        background: color-mix(in oklch, oklch(0.65 0.16 290) 22%, transparent);
-    }
-    .pw-tp-sub {
-        color: oklch(0.82 0.13 200);
-        background: color-mix(in oklch, oklch(0.65 0.13 200) 22%, transparent);
-    }
     .pw-tp-grp {
         color: oklch(0.82 0.13 50);
         background: color-mix(in oklch, oklch(0.65 0.16 50) 22%, transparent);
     }
-    .pw-tp-agg-jackett {
-        color: oklch(0.82 0.14 25);
-        background: color-mix(in oklch, oklch(0.65 0.16 25) 22%, transparent);
-    }
-    .pw-tp-agg-prowlarr {
-        color: oklch(0.82 0.14 175);
-        background: color-mix(in oklch, oklch(0.65 0.16 175) 22%, transparent);
-    }
-    .pw-tp-agg-ext {
-        color: oklch(0.82 0.14 300);
-        background: color-mix(in oklch, oklch(0.65 0.16 300) 22%, transparent);
-    }
 
-    .pw-tp-agg-tabs {
+    .pw-tp-filters {
         display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .pw-tp-chips {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
         gap: 4px;
     }
-    .pw-tp-agg-tabs button {
+    .pw-tp-chip {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 5px;
         background: transparent;
-        border: none;
-        color: rgba(220, 220, 225, 0.5);
-        font-size: 11px;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        color: rgba(220, 220, 225, 0.6);
+        font-size: 11.5px;
         padding: 3px 9px;
-        border-radius: 4px;
+        border-radius: 999px;
         cursor: pointer;
+        white-space: nowrap;
+        transition:
+            background 0.12s ease,
+            border-color 0.12s ease,
+            color 0.12s ease;
+    }
+    .pw-tp-chip small {
+        font-size: 10px;
+        color: rgba(220, 220, 225, 0.38);
         font-variant-numeric: tabular-nums;
     }
-    .pw-tp-agg-tabs button:hover {
+    .pw-tp-chip:hover {
         color: #ececef;
-        background: rgba(255, 255, 255, 0.04);
+        border-color: rgba(255, 255, 255, 0.14);
     }
-    .pw-tp-agg-tabs button.on {
+    .pw-tp-chip.on {
         color: #ececef;
+        border-color: color-mix(in oklch, var(--pw-accent) 60%, transparent);
+        background: color-mix(in oklch, var(--pw-accent) 16%, transparent);
+    }
+    .pw-tp-chip.on small {
+        color: rgba(236, 236, 239, 0.6);
+    }
+    .pw-tp-chip:focus-visible,
+    .pw-tp-reset:focus-visible {
+        outline: 2px solid var(--pw-accent);
+        outline-offset: 1px;
+    }
+    .pw-tp-sep {
+        width: 1px;
+        height: 14px;
+        margin: 0 3px;
         background: rgba(255, 255, 255, 0.08);
     }
+    .pw-tp-sort {
+        flex-shrink: 0;
+        align-self: flex-start;
+    }
+    .pw-tp-reset {
+        margin-left: 6px;
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--pw-accent);
+        font-size: inherit;
+        cursor: pointer;
+    }
 
-    .pw-tp-meta {
+    .pw-tp-src {
+        margin-left: 2px;
+        font-size: 11.5px;
+        font-weight: 500;
+        color: rgba(232, 232, 234, 0.78);
+    }
+    .pw-tp-eng {
         font-size: 10.5px;
-        color: rgba(220, 220, 225, 0.5);
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        opacity: 0.9;
+    }
+    .pw-tp-eng-jackett {
+        color: oklch(0.8 0.14 25);
+    }
+    .pw-tp-eng-prowlarr {
+        color: oklch(0.8 0.13 175);
+    }
+    .pw-tp-eng-ext {
+        color: oklch(0.8 0.13 300);
+    }
+    .pw-tp-extra {
+        margin: 5px 0 0;
+        font-size: 11px;
+        color: rgba(220, 220, 225, 0.42);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .pw-tp-rowerr {
+        margin: 6px 0 0;
+        font-size: 11.5px;
+        color: oklch(0.78 0.14 25);
+    }
+    .pw-tp-next-err {
+        margin: 10px 12px 0;
+    }
+    .pw-tp-nums {
+        flex-shrink: 0;
+        width: 76px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 3px;
         font-variant-numeric: tabular-nums;
-        margin-left: 4px;
+    }
+    .pw-tp-size {
+        font-size: 13px;
+        font-weight: 500;
+        color: #d8d8dc;
+    }
+    .pw-tp-size.is-huge {
+        color: oklch(0.8 0.14 70);
     }
     .pw-tp-seeds {
-        font-size: 10.5px;
+        font-size: 11px;
         color: oklch(0.78 0.16 145);
-        font-variant-numeric: tabular-nums;
     }
-    .pw-tp-peers {
-        font-size: 10.5px;
-        color: oklch(0.78 0.13 80);
-        font-variant-numeric: tabular-nums;
+    .pw-tp-seeds.is-dead {
+        color: oklch(0.68 0.13 25);
+    }
+    .pw-tp-get {
+        flex-shrink: 0;
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: rgba(232, 232, 234, 0.8);
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+            background 0.12s ease,
+            border-color 0.12s ease,
+            color 0.12s ease;
+    }
+    .pw-tp-row:hover .pw-tp-get:not(:disabled),
+    .pw-tp-get:focus-visible {
+        background: var(--pw-accent);
+        border-color: transparent;
+        color: #08090b;
+        outline: none;
+    }
+    .pw-tp-get:disabled {
+        opacity: 0.5;
+        cursor: default;
     }
 
     .pw-tp-dl {
@@ -1159,6 +1386,30 @@
         .pw-tp-bg {
             padding: 0;
             align-items: flex-end;
+        }
+        .pw-tp-filters {
+            padding: 8px 12px;
+            align-items: flex-start;
+        }
+        .pw-tp-chips {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .pw-tp-chip {
+            padding: 5px 10px;
+        }
+        .pw-tp-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            column-gap: 10px;
+            row-gap: 8px;
+        }
+        .pw-tp-info {
+            grid-row: span 2;
+        }
+        .pw-tp-nums {
+            width: auto;
         }
     }
 
