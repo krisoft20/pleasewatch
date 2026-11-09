@@ -1005,7 +1005,7 @@ fn classify_storage_file(path: &std::path::Path, bytes: u64, scan: &mut StorageS
 
     scan.bytes += bytes;
     scan.files += 1;
-    if ["mp4", "mkv", "webm", "m4v", "mov", "avi"].contains(&extension.as_str()) {
+    if ["mp4", "mkv", "webm", "m4v", "mov", "avi", "m4a"].contains(&extension.as_str()) {
         if stem.contains("_audio") {
             scan.audio_bytes += bytes;
             scan.audio_files += 1;

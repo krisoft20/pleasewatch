@@ -543,6 +543,7 @@
         document.documentElement.style.scrollbarGutter = prevHtmlGutter;
 
         teardownHls();
+        dub?.pause();
         stopWatchTicks();
         clearInterval(progressInterval);
         clearInterval(nextCountdownTimer);
@@ -579,23 +580,75 @@
         return u.includes('.m3u8') || u.startsWith('/api/live/hls/');
     }
 
+    let dub: HTMLAudioElement | null = null;
+
+    function sound(v: number) {
+        if (videoEl) {
+            videoEl.volume = v;
+            videoEl.muted = muted || !!dub;
+        }
+        if (dub) {
+            dub.volume = v;
+            dub.muted = muted;
+        }
+    }
+
+    function setDub(index: number) {
+        if (dub) {
+            dub.pause();
+            dub.removeAttribute('src');
+            dub.load();
+            dub = null;
+        }
+        const v = videoEl;
+        if (index > 0 && v && src.startsWith('/api/stream/')) {
+            const a = new Audio(`${src.split('?')[0]}/audio/${index}`);
+            a.preload = 'auto';
+            a.playbackRate = v.playbackRate;
+            a.addEventListener('loadedmetadata', () => (a.currentTime = v.currentTime), { once: true });
+            dub = a;
+            if (!v.paused) a.play().catch(() => {});
+        }
+        sound(volume);
+    }
+
+    $effect(() => {
+        const v = videoEl;
+        if (!v) return;
+        const follow = () => {
+            const a = dub;
+            if (!a || a.readyState < 1) return;
+            if (Math.abs(a.currentTime - v.currentTime) > 0.3) a.currentTime = v.currentTime;
+            if (a.playbackRate !== v.playbackRate) a.playbackRate = v.playbackRate;
+            if (v.paused || v.readyState < 3) {
+                if (!a.paused) a.pause();
+            } else if (a.paused) a.play().catch(() => {});
+        };
+        const evs = ['play', 'playing', 'pause', 'waiting', 'seeked', 'ratechange', 'timeupdate'];
+        for (const e of evs) v.addEventListener(e, follow);
+        return () => {
+            for (const e of evs) v.removeEventListener(e, follow);
+        };
+    });
+
     async function loadStream() {
         if (!videoEl) return;
         teardownHls();
+        selectedAudioIndex = 0;
+        setDub(0);
         if (isHls(src)) {
             attachHls(videoEl, src);
             srcSwitching = false;
             return;
         }
         const frag = resumePosition > 0 ? `#t=${Math.floor(resumePosition)}` : '';
-        selectedAudioIndex = 0;
         videoEl.src = src + frag;
         srcSwitching = false;
 
         const idx = await pickInitialAudioIndex();
         if (idx > 0 && videoEl) {
             selectedAudioIndex = idx;
-            videoEl.src = `${src}?audio=${idx}${frag}`;
+            setDub(idx);
         }
     }
 
@@ -683,8 +736,7 @@
         }
         if (videoEl) {
             currentTime = videoEl.currentTime;
-            videoEl.volume = volume;
-            videoEl.muted = muted;
+            sound(volume);
             loadAudioTracks();
             if (!$watchTogether.active) {
                 videoEl
@@ -1068,9 +1120,8 @@
 
     function setVolume(v: number) {
         volume = Math.max(0, Math.min(1, v));
-        if (videoEl) videoEl.volume = volume;
         muted = volume === 0;
-        if (videoEl) videoEl.muted = muted;
+        sound(volume);
         localStorage.setItem('player-volume', String(volume));
         localStorage.setItem('player-muted', String(muted));
     }
@@ -1113,7 +1164,7 @@
 
     function toggleMute() {
         muted = !muted;
-        if (videoEl) videoEl.muted = muted;
+        sound(volume);
         localStorage.setItem('player-muted', String(muted));
     }
 
@@ -1322,24 +1373,7 @@
         localStorage.setItem('player-audio-lang', lang);
         const showKey = showMediaId || mediaId;
         if (showKey) localStorage.setItem(`audio-lang-${showKey}`, lang);
-        if (videoEl) {
-            const pos = videoEl.currentTime;
-            const wasPlaying = playing;
-            const baseUrl = src.split('?')[0];
-            const newSrc = index === 0 ? baseUrl : `${baseUrl}?audio=${index}`;
-            waiting = true;
-            videoEl.src = newSrc;
-            videoEl.addEventListener(
-                'loadeddata',
-                () => {
-                    videoEl!.currentTime = pos;
-                    if (wasPlaying) videoEl!.play().catch(() => {});
-                    waiting = false;
-                },
-                { once: true }
-            );
-            videoEl.load();
-        }
+        setDub(index);
     }
 
     function langName(code: string): string {
@@ -1551,9 +1585,9 @@
         if (voice) u.voice = voice;
         u.rate = 0.9;
         const seq = ++ttsSeq;
-        if (videoEl) videoEl.volume = volume * 0.25;
+        sound(volume * 0.25);
         u.onend = u.onerror = () => {
-            if (seq === ttsSeq && videoEl) videoEl.volume = volume;
+            if (seq === ttsSeq) sound(volume);
         };
         speechSynthesis.cancel();
         speechSynthesis.speak(u);

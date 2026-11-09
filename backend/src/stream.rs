@@ -26,6 +26,7 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/stream/{id}", get(handle_stream))
         .route("/api/stream/{id}/audio-tracks", get(handle_audio_tracks))
+        .route("/api/stream/{id}/audio/{idx}", get(handle_audio))
         .route("/api/thumb/{id}", get(handle_thumb))
         .layer(axum::middleware::from_fn_with_state(
             state,
@@ -33,15 +34,9 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
         ))
 }
 
-#[derive(Deserialize)]
-struct StreamQuery {
-    audio: Option<u32>,
-}
-
 async fn handle_stream(
     State(state): State<Arc<AppState>>,
     AxPath(id): AxPath<String>,
-    Query(q): Query<StreamQuery>,
     headers: HeaderMap,
 ) -> Response {
     let path = match resolve_file(&state, &id).await {
@@ -52,27 +47,23 @@ async fn handle_stream(
         return (StatusCode::NOT_FOUND, "file missing on disk").into_response();
     }
 
-    if let Some(idx) = q.audio.filter(|n| *n > 0) {
-        match ensure_audio_remux(&path, idx).await {
-            Ok(cached) => return serve_with_range(&cached, &headers).await,
-            Err(e) => {
-                eprintln!("[stream] audio remux failed: {e}");
-                return (StatusCode::INTERNAL_SERVER_ERROR, "audio remux failed").into_response();
-            }
-        }
-    }
-
-    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-        let sibling = path.with_file_name(format!("{stem}_audio0.mp4"));
-        if sibling.exists() {
-            if audio_cache_fresh(&path, &sibling) {
-                return serve_with_range(&sibling, &headers).await;
-            }
-            let _ = tokio::fs::remove_file(&sibling).await;
-        }
-    }
-
+    let path = playable(path).await;
     serve_with_range(&path, &headers).await
+}
+
+pub async fn playable(path: PathBuf) -> PathBuf {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return path;
+    };
+    let sibling = path.with_file_name(format!("{stem}_audio0.mp4"));
+    if !sibling.exists() {
+        return path;
+    }
+    if audio_cache_fresh(&path, &sibling) {
+        return sibling;
+    }
+    let _ = tokio::fs::remove_file(&sibling).await;
+    path
 }
 
 static AUDIO_CACHE: OnceLock<Mutex<HashMap<String, Vec<AudioTrack>>>> = OnceLock::new();
@@ -402,7 +393,8 @@ pub async fn ensure_audio_remux(src: &std::path::Path, idx: u32) -> Result<PathB
     let is_hevc = matches!(vcodec.as_str(), "hevc" | "h265");
 
     let src_owned = src.to_path_buf();
-    let cached_owned = cached.clone();
+    let part = cached.with_extension("part");
+    let part_owned = part.clone();
     let codec_for_err = codec.clone();
     let out = tokio::task::spawn_blocking(move || {
         let threads = crate::ffmpeg::smart_threads().to_string();
@@ -427,8 +419,8 @@ pub async fn ensure_audio_remux(src: &std::path::Path, idx: u32) -> Result<PathB
                 "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-threads", &threads,
             ]);
         }
-        cmd.args(["-sn", "-movflags", "+faststart"])
-            .arg(&cached_owned);
+        cmd.args(["-sn", "-movflags", "+faststart", "-f", "mp4"])
+            .arg(&part_owned);
         let source = src_owned.display().to_string();
         crate::ffmpeg::throttled_tracked(cmd, Some(("audio-alt-track", &source)))
     })
@@ -437,9 +429,133 @@ pub async fn ensure_audio_remux(src: &std::path::Path, idx: u32) -> Result<PathB
     .map_err(|e| e.to_string())?;
     if !out.status.success() {
         eprintln!("[ffmpeg] audio '{codec_for_err}' remux failed");
+        let _ = tokio::fs::remove_file(&part).await;
         return Err(String::from_utf8_lossy(&out.stderr).into_owned());
     }
+    tokio::fs::rename(&part, &cached)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(cached)
+}
+
+async fn handle_audio(
+    State(state): State<Arc<AppState>>,
+    AxPath((id, idx)): AxPath<(String, u32)>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(path) = resolve_file(&state, &id).await else {
+        return (StatusCode::NOT_FOUND, "no file").into_response();
+    };
+    match ensure_audio_track(&path, idx).await {
+        Ok(p) => serve_with_range(&p, &headers).await,
+        Err(e) => {
+            eprintln!("[stream] audio {idx} extract failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "audio extract failed").into_response()
+        }
+    }
+}
+
+static EXTRACTING: OnceLock<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+
+fn audio_track_path(src: &Path, idx: u32) -> PathBuf {
+    let stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    src.with_file_name(format!("{stem}_audio{idx}.m4a"))
+}
+
+pub async fn ensure_audio_track(src: &Path, idx: u32) -> Result<PathBuf, String> {
+    extract_audio_tracks(src, &[idx]).await?;
+    Ok(audio_track_path(src, idx))
+}
+
+pub async fn extract_audio_tracks(src: &Path, idxs: &[u32]) -> Result<(), String> {
+    let lock = EXTRACTING
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .entry(src.to_path_buf())
+        .or_default()
+        .clone();
+    let _held = lock.lock().await;
+
+    let mut todo = Vec::new();
+    for &i in idxs {
+        let out = audio_track_path(src, i);
+        if out.exists() && audio_cache_fresh(src, &out) {
+            continue;
+        }
+        todo.push(i);
+    }
+    if todo.is_empty() {
+        return Ok(());
+    }
+
+    let probe = tokio::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "a",
+        ])
+        .arg(src)
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+    let codecs: Vec<String> = serde_json::from_slice::<serde_json::Value>(&probe.stdout)
+        .ok()
+        .and_then(|v| v.get("streams").and_then(|s| s.as_array().cloned()))
+        .unwrap_or_default()
+        .iter()
+        .map(|s| {
+            s.get("codec_name")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string()
+        })
+        .collect();
+
+    let threads = crate::ffmpeg::smart_threads().to_string();
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.args(["-y", "-threads", &threads, "-i"]).arg(src);
+    let mut parts = Vec::new();
+    for &i in &todo {
+        let Some(codec) = codecs.get(i as usize) else {
+            return Err(format!("no audio track {i}"));
+        };
+        let part = audio_track_path(src, i).with_extension("part");
+        cmd.args(["-map", &format!("0:a:{i}"), "-vn", "-sn", "-dn"]);
+        if matches!(codec.as_str(), "aac" | "mp3") {
+            cmd.args(["-c:a", "copy"]);
+        } else {
+            cmd.args(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+        }
+        cmd.args(["-movflags", "+faststart", "-f", "mp4"])
+            .arg(&part);
+        parts.push((part, audio_track_path(src, i)));
+    }
+    println!("[stream] extracting audio {todo:?} from {}", src.display());
+
+    let source = src.display().to_string();
+    let out = tokio::task::spawn_blocking(move || {
+        crate::ffmpeg::throttled_tracked(cmd, Some(("audio-track", &source)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        for (part, _) in &parts {
+            let _ = tokio::fs::remove_file(part).await;
+        }
+        return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+    }
+    for (part, done) in parts {
+        tokio::fs::rename(&part, &done)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn audio_cache_key(path: &Path) -> String {
@@ -591,6 +707,7 @@ fn parse_range(raw: &str, size: u64) -> Option<(u64, u64)> {
 fn ctype_for(path: &std::path::Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()) {
         Some("mp4") | Some("m4v") => "video/mp4",
+        Some("m4a") => "audio/mp4",
         Some("webm") => "video/webm",
         Some("mkv") => "video/x-matroska",
         Some("avi") => "video/x-msvideo",

@@ -763,8 +763,7 @@ export const api = {
 
     audioTracks: (id: string) => request<AudioTrack[]>(`/api/stream/${id}/audio-tracks`),
 
-    streamUrl: (id: string, audio?: number) =>
-        audio && audio > 0 ? `/api/stream/${id}?audio=${audio}` : `/api/stream/${id}`,
+    streamUrl: (id: string) => `/api/stream/${id}`,
 
     thumbUrl: (id: string, t: number, w = 480) => {
         const ts = Math.max(0, Math.floor(t / 10) * 10);

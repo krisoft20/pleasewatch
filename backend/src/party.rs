@@ -438,6 +438,7 @@ async fn handle_stream(
         return err_resp(StatusCode::NOT_FOUND, "file missing");
     }
 
+    let abs = crate::stream::playable(abs).await;
     serve_with_range(&abs, &headers).await
 }
 
