@@ -5,6 +5,7 @@
     import { goto } from '$app/navigation';
     import {
         api,
+        uploadError,
         type DownloadStatus,
         type MediaWithEpisodes,
         type TmdbDetail,
@@ -566,7 +567,7 @@
                 };
                 xhr.onload = () => {
                     if (xhr.status >= 200 && xhr.status < 300) resolve();
-                    else reject(new Error(`upload ${xhr.status}: ${xhr.responseText}`));
+                    else reject(new Error(uploadError(xhr)));
                 };
                 xhr.onerror = () => reject(new Error('upload failed'));
                 xhr.send(fd);
@@ -712,6 +713,11 @@
                 `${title} S${String(activeSeason ?? 0).padStart(2, '0')}`
         };
     }
+    const seasonPackActive = $derived.by(() => {
+        if (!packDownload || activeSeason === null) return false;
+        const m = packDownload.title?.match(/[Ss](\d{1,2})(?!\d)/);
+        return !m || parseInt(m[1], 10) === activeSeason;
+    });
     const seasonHasAny = $derived(activeSeason !== null && (readyInSeason(activeSeason) > 0 || seasonDownloadActive));
 
     const isAdmin = $derived(user?.role === 'admin');
@@ -1098,7 +1104,7 @@
                         {#if activeSeason !== null && user}
                             {@const ready = readyInSeason(activeSeason)}
                             <div class="pw-season-actions">
-                                {#if !seasonComplete && !seasonDownloadActive}
+                                {#if !seasonComplete && !seasonPackActive}
                                     <button
                                         class="pw-season-action"
                                         onclick={() => (pickerSeasonPack = true)}

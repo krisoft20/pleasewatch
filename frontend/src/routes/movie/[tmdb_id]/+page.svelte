@@ -4,6 +4,7 @@
     import { goto } from '$app/navigation';
     import {
         api,
+        uploadError,
         type MediaWithEpisodes,
         type TmdbCollection,
         type TmdbDetail,
@@ -276,7 +277,7 @@
                 };
                 xhr.onload = () => {
                     if (xhr.status >= 200 && xhr.status < 300) resolve();
-                    else reject(new Error(`upload ${xhr.status}: ${xhr.responseText}`));
+                    else reject(new Error(uploadError(xhr)));
                 };
                 xhr.onerror = () => reject(new Error('upload failed'));
                 xhr.send(fd);

@@ -675,6 +675,14 @@ export type LiveResolve = { token: string; master_url: string; youtube?: string 
 
 let mePromise: Promise<User> | null = null;
 
+export function uploadError(xhr: XMLHttpRequest): string {
+    try {
+        return JSON.parse(xhr.responseText).error || `upload failed (${xhr.status})`;
+    } catch {
+        return `upload failed (${xhr.status})`;
+    }
+}
+
 export const api = {
     register: (username: string, email: string, password: string) =>
         request<{ message: string; role: string }>('/api/auth/register', {

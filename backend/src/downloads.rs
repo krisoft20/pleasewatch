@@ -582,6 +582,19 @@ async fn handle_create(
         return err(StatusCode::BAD_REQUEST, "invalid magnet or torrent url");
     }
 
+    let want = btih(&body.magnet);
+    let busy = {
+        let db = state.db.lock().await;
+        db.list_active_downloads().unwrap_or_default()
+    };
+    if let Some(d) = busy
+        .iter()
+        .find(|d| d.magnet == body.magnet || (want.is_some() && btih(&d.magnet) == want))
+    {
+        crate::pi!("[downloads] skipped duplicate of {}", d.id);
+        return err(StatusCode::CONFLICT, "already downloading");
+    }
+
     let media_id = match resolve_media_id(&state, &body, &auth).await {
         Ok(id) => id,
         Err(msg) => return err(StatusCode::BAD_REQUEST, &msg),
@@ -940,6 +953,13 @@ pub fn extract_hash(magnet: &str) -> Option<String> {
     }
 }
 
+fn btih(magnet: &str) -> Option<String> {
+    magnet
+        .split(['?', '&'])
+        .find_map(|p| p.strip_prefix("xt=urn:btih:"))
+        .map(|h| h.to_lowercase())
+}
+
 pub fn spawn_poller(state: Arc<AppState>) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(POLL_INTERVAL_SECS));
@@ -1011,11 +1031,16 @@ async fn poll_once(state: &Arc<AppState>) -> Result<(), String> {
         let is_series = media.media_type == "tv";
         let is_pack = is_series && row.episode_id.is_none();
 
+        if !pack_complete {
+            trim_files(state, &qbit, &row.id, hash, &row.media_id, is_pack).await;
+        }
+
         if !is_pack && !pack_complete {
             continue;
         }
 
         let mut landed_any = false;
+        let mut land_failed = false;
 
         let pack_file_progress: std::collections::HashMap<String, f64> = if is_pack {
             qbit.files(hash)
@@ -1088,6 +1113,9 @@ async fn poll_once(state: &Arc<AppState>) -> Result<(), String> {
                 );
                 if let Err(e) = landed {
                     crate::pe!("[downloads] land S{season:02}E{episode:02} failed: {e}");
+                    let db = state.db.lock().await;
+                    let _ = db.update_episode_status(&ep_id, "pending");
+                    land_failed = true;
                     continue;
                 }
 
@@ -1226,6 +1254,9 @@ async fn poll_once(state: &Arc<AppState>) -> Result<(), String> {
             let dest = format!("{dest_dir}/video.mp4");
             if let Err(e) = land_video(&src, Path::new(&dest)) {
                 crate::pe!("[downloads] land '{}' failed: {e}", info.name);
+                if let Some(eid) = &ep_id_opt {
+                    let _ = state.db.lock().await.update_episode_status(eid, "pending");
+                }
                 continue;
             }
 
@@ -1370,6 +1401,11 @@ async fn poll_once(state: &Arc<AppState>) -> Result<(), String> {
             let _ = db.set_download_status(&row.id, "complete");
         }
 
+        if land_failed {
+            crate::pe!("[downloads] keeping torrent {hash}, some episodes didn't land");
+            continue;
+        }
+
         let _ = qbit.set_upload_limit(hash, 1).await;
 
         if let Err(e) = qbit.delete(hash, true).await {
@@ -1416,6 +1452,80 @@ fn is_video_basename(name: &str) -> bool {
             | Some("flv")
             | Some("wmv")
     )
+}
+
+fn is_sub_basename(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    matches!(
+        lower.rsplit_once('.').map(|(_, e)| e),
+        Some("srt" | "ass" | "ssa" | "vtt" | "sub" | "idx" | "sup")
+    )
+}
+
+static TRIMMED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::OnceLock::new();
+
+async fn trim_files(
+    state: &Arc<AppState>,
+    qbit: &crate::qbit::Qbit,
+    dl_id: &str,
+    hash: &str,
+    media_id: &str,
+    is_pack: bool,
+) {
+    let seen = TRIMMED.get_or_init(Default::default);
+    if seen.lock().unwrap().contains(dl_id) {
+        return;
+    }
+    let files = match qbit.files(hash).await {
+        Ok(f) if !f.is_empty() => f,
+        _ => return,
+    };
+
+    let have: std::collections::HashSet<(i32, i32)> = if is_pack {
+        let db = state.db.lock().await;
+        db.list_episodes_for_media(media_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|e| {
+                e.status == "ready"
+                    && e.file_path.as_deref().is_some_and(|p| Path::new(p).exists())
+            })
+            .map(|e| (e.season, e.episode))
+            .collect()
+    } else {
+        Default::default()
+    };
+
+    let mut junk = Vec::new();
+    let mut owned = Vec::new();
+    for f in files.iter().filter(|f| f.priority != 0) {
+        let name = Path::new(&f.name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if is_video_basename(name) {
+            if parse_episode_from_path(Path::new(name)).is_some_and(|se| have.contains(&se)) {
+                owned.push(f.index);
+            }
+        } else if !is_sub_basename(name) {
+            junk.push(f.index);
+        }
+    }
+
+    if !junk.is_empty() || !owned.is_empty() {
+        crate::pi!(
+            "[downloads] {dl_id}: skipping {} junk files, {} episodes we already have",
+            junk.len(),
+            owned.len()
+        );
+        junk.extend(owned);
+        if let Err(e) = qbit.set_file_prio(hash, &junk, 0).await {
+            crate::pe!("[downloads] file prio failed for {dl_id}: {e}");
+            return;
+        }
+    }
+    seen.lock().unwrap().insert(dl_id.to_string());
 }
 
 pub fn pack_episode_from_name(name: &str) -> Option<(i32, i32)> {
@@ -1520,7 +1630,7 @@ fn drop_audio_cache(video: &Path) {
         let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        if name.starts_with(&prefix) && name.ends_with(".mp4") {
+        if name.starts_with(&prefix) && (name.ends_with(".mp4") || name.ends_with(".m4a")) {
             let _ = std::fs::remove_file(p);
         }
     }
@@ -2309,15 +2419,10 @@ fn spawn_audio_pregen(dest: String) {
         if count <= 1 {
             return;
         }
-        crate::pi!(
-            "[downloads] pre-gen {} alt audio tracks for {dest}",
-            count - 1
-        );
-        for idx in 1..count {
-            match crate::stream::ensure_audio_remux(path, idx).await {
-                Ok(p) => crate::pi!("[downloads] alt audio {idx} cached -> {}", p.display()),
-                Err(e) => crate::pe!("[downloads] alt audio {idx} failed: {e}"),
-            }
+        let idxs: Vec<u32> = (1..count).collect();
+        match crate::stream::extract_audio_tracks(path, &idxs).await {
+            Ok(()) => crate::pi!("[downloads] {} alt audio tracks for {dest}", idxs.len()),
+            Err(e) => crate::pe!("[downloads] alt audio for {dest} failed: {e}"),
         }
     });
 }

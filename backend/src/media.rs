@@ -382,10 +382,6 @@ async fn handle_upload_local(
     Path(media_id): Path<String>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
-    if !auth.is_admin() {
-        return err(StatusCode::FORBIDDEN, "admin only");
-    }
-
     let media = {
         let db = state.db.lock().await;
         match db.find_media_by_id(&media_id).ok().flatten() {
@@ -393,6 +389,9 @@ async fn handle_upload_local(
             None => return err(StatusCode::NOT_FOUND, "media not found"),
         }
     };
+    if !auth.is_admin() && media.added_by.as_deref() != Some(auth.id.as_str()) {
+        return err(StatusCode::FORBIDDEN, "not your title");
+    }
 
     let staging_root = std::path::Path::new(&state.media_root).join("_uploads");
     let _ = std::fs::create_dir_all(&staging_root);
@@ -426,6 +425,14 @@ async fn handle_upload_local(
             .file_name()
             .and_then(safe_upload_filename)
             .unwrap_or_else(|| format!("upload-{}.mkv", uuid::Uuid::new_v4()));
+        let ext = original
+            .rsplit_once('.')
+            .map(|(_, e)| e.to_lowercase())
+            .unwrap_or_default();
+        if !UPLOAD_EXTS.contains(&ext.as_str()) {
+            let _ = std::fs::remove_dir_all(&staging_dir);
+            return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "only video files");
+        }
         let target = staging_dir.join(&original);
         let mut out = match tokio::fs::File::create(&target).await {
             Ok(f) => f,
@@ -462,6 +469,12 @@ async fn handle_upload_local(
         return err(StatusCode::BAD_REQUEST, "no file uploaded");
     };
 
+    if !has_video_stream(&src).await {
+        println!("[upload] rejected {} from {}, no video stream", src.display(), auth.username);
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "not a video file");
+    }
+
     let se = if media.media_type == "tv" {
         match (season_override, episode_override) {
             (Some(s), Some(e)) => Some((s, e)),
@@ -493,6 +506,30 @@ async fn handle_upload_local(
             err(StatusCode::INTERNAL_SERVER_ERROR, &e)
         }
     }
+}
+
+const UPLOAD_EXTS: &[&str] = &["mkv", "mp4", "m4v", "avi", "mov", "webm", "ts"];
+
+async fn has_video_stream(path: &std::path::Path) -> bool {
+    let out = tokio::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v",
+            "-show_entries",
+            "stream=codec_type:stream_disposition=attached_pic",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .output()
+        .await;
+    let Ok(o) = out else { return false };
+    o.status.success()
+        && String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .any(|l| l.starts_with("video") && !l.ends_with(",1"))
 }
 
 fn err(status: StatusCode, msg: &str) -> axum::response::Response {
