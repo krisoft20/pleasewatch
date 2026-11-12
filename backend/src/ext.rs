@@ -186,42 +186,56 @@ pub async fn resolve(placeholder: &str) -> Result<String, String> {
     let page = format!("{BASE}/{slug}/");
 
     let mut ready = SESSION_LOCK.get_or_init(|| Mutex::new(false)).lock().await;
-    let html = session_req(&mut ready, json!({ "cmd": "request.get", "url": page })).await?;
-    let token = between(&html, "pageToken = '", "'").ok_or("no page token")?;
-    let csrf = between(&html, "csrfToken = '", "'").ok_or("no csrf token")?;
+    let mut tries = 0;
+    let v = loop {
+        let html = session_req(
+            &mut ready,
+            json!({ "cmd": "request.get", "url": page.as_str() }),
+        )
+        .await?;
+        let token = between(&html, "pageToken = '", "'").ok_or("no page token")?;
+        let csrf = between(&html, "csrfToken = '", "'").ok_or("no csrf token")?;
 
-    let ts = chrono::Utc::now().timestamp();
-    let hmac = format!("{:x}", sha2::Sha256::digest(format!("{id}|{ts}|{token}")));
-    let mut form = reqwest::Url::parse("http://x/").unwrap();
-    form.query_pairs_mut()
-        .append_pair("torrent_id", &id.to_string())
-        .append_pair("action", "get_magnet")
-        .append_pair("timestamp", &ts.to_string())
-        .append_pair("hmac", &hmac)
-        .append_pair("sessid", csrf);
+        let ts = chrono::Utc::now().timestamp();
+        let hmac = format!("{:x}", sha2::Sha256::digest(format!("{id}|{ts}|{token}")));
+        let mut form = reqwest::Url::parse("http://x/").unwrap();
+        form.query_pairs_mut()
+            .append_pair("torrent_id", &id.to_string())
+            .append_pair("action", "get_magnet")
+            .append_pair("timestamp", &ts.to_string())
+            .append_pair("hmac", &hmac)
+            .append_pair("sessid", csrf);
 
-    let body = session_req(
-        &mut ready,
-        json!({
-            "cmd": "request.post",
-            "url": format!("{BASE}/ajax/getTorrentMagnet.php"),
-            "postData": form.query().unwrap_or_default(),
-        }),
-    )
-    .await?;
+        let body = session_req(
+            &mut ready,
+            json!({
+                "cmd": "request.post",
+                "url": format!("{BASE}/ajax/getTorrentMagnet.php"),
+                "postData": form.query().unwrap_or_default(),
+            }),
+        )
+        .await?;
 
-    let raw = strip_tags(&body).replace("&lt;", "<").replace("&gt;", ">");
-    let raw = match (raw.find('{'), raw.rfind('}')) {
-        (Some(a), Some(b)) if b > a => &raw[a..=b],
-        _ => return Err("no json in magnet response".into()),
-    };
-    let v: Value = serde_json::from_str(raw).map_err(|e| format!("bad magnet json: {e}"))?;
-    if v["success"] != true {
-        return Err(v["error"]
+        let raw = strip_tags(&body).replace("&lt;", "<").replace("&gt;", ">");
+        let raw = match (raw.find('{'), raw.rfind('}')) {
+            (Some(a), Some(b)) if b > a => &raw[a..=b],
+            _ => return Err("no json in magnet response".into()),
+        };
+        let v: Value = serde_json::from_str(raw).map_err(|e| format!("bad magnet json: {e}"))?;
+        if v["success"] == true {
+            break v;
+        }
+        let err = v["error"]
             .as_str()
             .unwrap_or("magnet lookup failed")
-            .to_string());
-    }
+            .to_string();
+        tries += 1;
+        if err != "Invalid session" || tries == 3 {
+            return Err(err);
+        }
+        eprintln!("[ext] {slug}: invalid session, retry {tries}");
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    };
     if let Some(m) = v["magnet"].as_str().filter(|m| m.starts_with("magnet:")) {
         return Ok(m.to_string());
     }
