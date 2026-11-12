@@ -40,6 +40,7 @@ enum SearchSource {
     Jackett,
     Prowlarr,
     Ext,
+    Bits,
 }
 
 #[derive(Deserialize)]
@@ -66,20 +67,27 @@ async fn handle_search(
     }
 
     let ext = matches!(q.source, Some(SearchSource::Ext));
+    let bits = matches!(q.source, Some(SearchSource::Bits));
     match q.source {
         Some(SearchSource::Jackett) => prowlarr = None,
         Some(SearchSource::Prowlarr) => jackett = None,
-        Some(SearchSource::Ext) => {
+        Some(SearchSource::Ext) | Some(SearchSource::Bits) => {
             jackett = None;
             prowlarr = None;
         }
         None => {}
     }
 
+    if bits {
+        if !crate::bitsearch::enabled() || q.q.trim().is_empty() {
+            return Json::<Vec<TorrentOption>>(Vec::new()).into_response();
+        }
+    }
+
     if ext && !crate::ext::enabled() {
         return Json::<Vec<TorrentOption>>(Vec::new()).into_response();
     }
-    if jackett.is_none() && prowlarr.is_none() && !ext {
+    if jackett.is_none() && prowlarr.is_none() && !ext && !bits {
         return Json::<Vec<TorrentOption>>(Vec::new()).into_response();
     }
 
@@ -138,14 +146,14 @@ async fn handle_search(
             .collect::<Vec<_>>()
             .join(" ");
 
-    let alt_titles = if is_anime && !ext && !show_text.is_empty() {
+    let alt_titles = if is_anime && !ext && !bits && !show_text.is_empty() {
         crate::anilist::anime_titles(&show_text).await
     } else {
         Vec::new()
     };
 
     let mut extra: Vec<String> = Vec::new();
-    if is_anime && !ext {
+    if is_anime && !ext && !bits {
         let mut names = vec![show_text.clone()];
         for t in &alt_titles {
             if !names.iter().any(|n| n.eq_ignore_ascii_case(t)) {
@@ -195,7 +203,9 @@ async fn handle_search(
         }
         out
     };
-    let (mut title_items, imdb_items) = if ext {
+    let (mut title_items, imdb_items) = if bits {
+        (crate::bitsearch::search(&search_q).await, Vec::new())
+    } else if ext {
         match q.imdb.as_deref() {
             Some(imdb) => (Vec::new(), crate::ext::search(&search_q, Some(imdb)).await),
             None => (crate::ext::search(&search_q, None).await, Vec::new()),

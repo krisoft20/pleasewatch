@@ -2,6 +2,7 @@ mod admin;
 mod align;
 mod anilist;
 mod auth;
+mod bitsearch;
 mod books;
 mod clips;
 mod collection;

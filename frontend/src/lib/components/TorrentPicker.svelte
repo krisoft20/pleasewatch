@@ -115,8 +115,8 @@
     let rowErr = $state<Record<string, string>>({});
     let nextErr = $state('');
     let card = $state<HTMLDivElement>();
-    type TorrentSource = 'jackett' | 'prowlarr' | 'ext';
-    const allSources: TorrentSource[] = ['jackett', 'prowlarr', 'ext'];
+    type TorrentSource = 'jackett' | 'prowlarr' | 'ext' | 'bits';
+    const allSources: TorrentSource[] = ['jackett', 'prowlarr', 'ext', 'bits'];
     let aggFilter = $state<'all' | TorrentSource>('all');
     let searching = $state<TorrentSource[]>([]);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -231,7 +231,7 @@
         loading = true;
         err = '';
         results = [];
-        const sources = allSources.filter((s) => s !== 'ext' || kind !== 'book');
+        const sources = allSources.filter((s) => kind !== 'book' || (s !== 'ext' && s !== 'bits'));
         searching = [...sources];
         const finalQ = (q + langSuffix(lang)).trim();
         const errors: string[] = [];
@@ -1255,6 +1255,9 @@
     }
     .pw-tp-eng-ext {
         color: oklch(0.8 0.13 300);
+    }
+    .pw-tp-eng-bits {
+        color: oklch(0.82 0.12 95);
     }
     .pw-tp-extra {
         margin: 5px 0 0;

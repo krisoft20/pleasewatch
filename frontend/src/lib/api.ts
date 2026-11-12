@@ -1120,7 +1120,7 @@ export const api = {
         opts: {
             kind?: string;
             imdb?: string;
-            source?: 'jackett' | 'prowlarr' | 'ext';
+            source?: 'jackett' | 'prowlarr' | 'ext' | 'bits';
             abs?: number;
             signal?: AbortSignal;
         } = {}
