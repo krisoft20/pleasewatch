@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::{broadcast, RwLock};
 
@@ -40,6 +40,28 @@ pub enum WsMsg {
         playing: bool,
         time: f64,
         participants: u32,
+        #[serde(default)]
+        wait: bool,
+    },
+    Ping {
+        t: f64,
+    },
+    Pong {
+        t: f64,
+        server: f64,
+    },
+    Tick {
+        playing: bool,
+        time: f64,
+        at: f64,
+        wait: bool,
+        waiting: Vec<String>,
+    },
+    Buffering {
+        on: bool,
+    },
+    WaitMode {
+        on: bool,
     },
     UserJoined {
         name: String,
@@ -60,6 +82,65 @@ pub struct Session {
     at: Instant,
     participants: u32,
     tx: broadcast::Sender<String>,
+    wait: bool,
+    held: bool,
+    buffering: HashMap<String, String>,
+}
+
+impl Session {
+    fn pos(&self) -> f64 {
+        if self.playing {
+            self.current_time + self.at.elapsed().as_secs_f64()
+        } else {
+            self.current_time
+        }
+    }
+
+    fn tick(&self) -> WsMsg {
+        let mut waiting: Vec<String> = self.buffering.values().cloned().collect();
+        waiting.sort();
+        waiting.dedup();
+        WsMsg::Tick {
+            playing: self.playing,
+            time: self.pos(),
+            at: now_ms(),
+            wait: self.wait,
+            waiting,
+        }
+    }
+
+    fn send(&self, msg: &WsMsg) {
+        if let Ok(j) = serde_json::to_string(msg) {
+            let _ = self.tx.send(j);
+        }
+    }
+
+    fn hold_or_resume(&mut self) {
+        if self.wait && self.playing && !self.buffering.is_empty() {
+            self.current_time = self.pos();
+            self.playing = false;
+            self.held = true;
+            self.at = Instant::now();
+            self.send(&WsMsg::Pause {
+                time: self.current_time,
+            });
+        } else if self.held && (self.buffering.is_empty() || !self.wait) {
+            self.held = false;
+            self.playing = true;
+            self.at = Instant::now();
+            self.send(&WsMsg::Play {
+                time: self.current_time,
+            });
+        }
+        self.send(&self.tick());
+    }
+}
+
+fn now_ms() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64() * 1000.0)
+        .unwrap_or(0.0)
 }
 
 #[derive(Clone, Default)]
@@ -84,19 +165,28 @@ impl PartyManager {
                     at: Instant::now(),
                     participants: 0,
                     tx,
+                    wait: false,
+                    held: false,
+                    buffering: HashMap::new(),
                 },
             );
         }
     }
 
-    async fn join(&self, code: &str) -> Option<(broadcast::Receiver<String>, bool, f64, u32)> {
+    async fn join(&self, code: &str) -> Option<(broadcast::Receiver<String>, WsMsg, u32)> {
         let mut g = self.inner.write().await;
         let s = g.get_mut(code)?;
         s.participants += 1;
-        Some((s.tx.subscribe(), s.playing, s.current_time, s.participants))
+        let sync = WsMsg::StateSync {
+            playing: s.playing,
+            time: s.pos(),
+            participants: s.participants,
+            wait: s.wait,
+        };
+        Some((s.tx.subscribe(), sync, s.participants))
     }
 
-    async fn leave(&self, code: &str) -> u32 {
+    async fn leave(&self, code: &str, conn: &str) -> u32 {
         let mut g = self.inner.write().await;
         let Some(s) = g.get_mut(code) else {
             return 0;
@@ -105,6 +195,8 @@ impl PartyManager {
         let n = s.participants;
         if n == 0 {
             g.remove(code);
+        } else if s.buffering.remove(conn).is_some() {
+            s.hold_or_resume();
         }
         n
     }
@@ -112,12 +204,37 @@ impl PartyManager {
     pub(crate) async fn clock(&self, code: &str) -> Option<(bool, f64)> {
         let g = self.inner.read().await;
         let s = g.get(code)?;
-        let pos = if s.playing {
-            s.current_time + s.at.elapsed().as_secs_f64()
-        } else {
-            s.current_time
+        Some((s.playing, s.pos()))
+    }
+
+    async fn tick(&self, code: &str) -> Option<WsMsg> {
+        let g = self.inner.read().await;
+        g.get(code).map(|s| s.tick())
+    }
+
+    async fn buffering(&self, code: &str, conn: &str, name: &str, on: bool) {
+        let mut g = self.inner.write().await;
+        let Some(s) = g.get_mut(code) else {
+            return;
         };
-        Some((s.playing, pos))
+        let changed = if on {
+            s.buffering
+                .insert(conn.to_string(), name.to_string())
+                .is_none()
+        } else {
+            s.buffering.remove(conn).is_some()
+        };
+        if changed {
+            s.hold_or_resume();
+        }
+    }
+
+    async fn set_wait(&self, code: &str, on: bool) {
+        let mut g = self.inner.write().await;
+        if let Some(s) = g.get_mut(code) {
+            s.wait = on;
+            s.hold_or_resume();
+        }
     }
 
     pub(crate) async fn dispatch(&self, code: &str, msg: &WsMsg) {
@@ -128,11 +245,13 @@ impl PartyManager {
         match msg {
             WsMsg::Play { time } => {
                 s.playing = true;
+                s.held = false;
                 s.current_time = *time;
                 s.at = Instant::now();
             }
             WsMsg::Pause { time } => {
                 s.playing = false;
+                s.held = false;
                 s.current_time = *time;
                 s.at = Instant::now();
             }
@@ -140,11 +259,13 @@ impl PartyManager {
                 s.current_time = *time;
                 s.at = Instant::now();
             }
-            _ => {}
+            _ => {
+                s.send(msg);
+                return;
+            }
         }
-        if let Ok(j) = serde_json::to_string(msg) {
-            let _ = s.tx.send(j);
-        }
+        s.send(msg);
+        s.send(&s.tick());
     }
 }
 
@@ -339,16 +460,13 @@ async fn handle_ws(
 
 async fn pump(mut socket: WebSocket, state: Arc<AppState>, code: String, name: String) {
     state.party.ensure(&code).await;
-    let Some((mut brx, playing, time, participants)) = state.party.join(&code).await else {
+    let Some((mut brx, sync, participants)) = state.party.join(&code).await else {
         let _ = socket.send(Message::Close(None)).await;
         return;
     };
+    let conn = uuid::Uuid::new_v4().to_string();
+    let mut ticker = tokio::time::interval(Duration::from_secs(2));
 
-    let sync = WsMsg::StateSync {
-        playing,
-        time,
-        participants,
-    };
     if let Ok(j) = serde_json::to_string(&sync) {
         let _ = socket.send(Message::Text(j.into())).await;
     }
@@ -365,6 +483,11 @@ async fn pump(mut socket: WebSocket, state: Arc<AppState>, code: String, name: S
                 let Ok(j) = broadcast else { continue; };
                 if socket.send(Message::Text(j.into())).await.is_err() { break; }
             }
+            _ = ticker.tick() => {
+                let Some(t) = state.party.tick(&code).await else { break; };
+                let Ok(j) = serde_json::to_string(&t) else { continue; };
+                if socket.send(Message::Text(j.into())).await.is_err() { break; }
+            }
             client = socket.recv() => {
                 match client {
                     Some(Ok(Message::Text(t))) => {
@@ -372,6 +495,18 @@ async fn pump(mut socket: WebSocket, state: Arc<AppState>, code: String, name: S
                             match &m {
                                 WsMsg::Play { .. } | WsMsg::Pause { .. } | WsMsg::Seek { .. } | WsMsg::Chat { .. } => {
                                     state.party.dispatch(&code, &m).await;
+                                }
+                                WsMsg::Ping { t } => {
+                                    let pong = WsMsg::Pong { t: *t, server: now_ms() };
+                                    let Ok(j) = serde_json::to_string(&pong) else { continue; };
+                                    if socket.send(Message::Text(j.into())).await.is_err() { break; }
+                                }
+                                WsMsg::Buffering { on } => {
+                                    state.party.buffering(&code, &conn, &name, *on).await;
+                                }
+                                WsMsg::WaitMode { on } => {
+                                    println!("[party] {code} wait mode {on} by {name}");
+                                    state.party.set_wait(&code, *on).await;
                                 }
                                 _ => {}
                             }
@@ -385,7 +520,7 @@ async fn pump(mut socket: WebSocket, state: Arc<AppState>, code: String, name: S
         }
     }
 
-    let remaining = state.party.leave(&code).await;
+    let remaining = state.party.leave(&code, &conn).await;
     if remaining > 0 {
         let leave = WsMsg::UserLeft {
             name,
@@ -577,4 +712,57 @@ fn parse_range(s: &str, total: u64) -> Option<(u64, u64)> {
 
 fn err_resp(status: StatusCode, msg: &str) -> Response {
     (status, Json(ApiError { error: msg.into() })).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session(wait: bool) -> (Session, broadcast::Receiver<String>) {
+        let (tx, rx) = broadcast::channel(16);
+        let s = Session {
+            playing: true,
+            current_time: 100.0,
+            at: Instant::now(),
+            participants: 2,
+            tx,
+            wait,
+            held: false,
+            buffering: HashMap::new(),
+        };
+        (s, rx)
+    }
+
+    #[test]
+    fn wait_mode_holds_until_everyone_is_ready() {
+        let (mut s, mut rx) = session(true);
+        s.buffering.insert("a".into(), "ola".into());
+        s.hold_or_resume();
+        assert!(!s.playing && s.held);
+        assert!(rx.try_recv().unwrap().contains("\"Pause\""));
+
+        s.buffering.clear();
+        s.hold_or_resume();
+        assert!(s.playing && !s.held);
+        let _ = rx.try_recv();
+        assert!(rx.try_recv().unwrap().contains("\"Play\""));
+    }
+
+    #[test]
+    fn buffering_without_wait_mode_keeps_playing() {
+        let (mut s, _rx) = session(false);
+        s.buffering.insert("a".into(), "ola".into());
+        s.hold_or_resume();
+        assert!(s.playing && !s.held);
+    }
+
+    #[test]
+    fn turning_wait_off_releases_a_hold() {
+        let (mut s, _rx) = session(true);
+        s.buffering.insert("a".into(), "ola".into());
+        s.hold_or_resume();
+        s.wait = false;
+        s.hold_or_resume();
+        assert!(s.playing && !s.held);
+    }
 }

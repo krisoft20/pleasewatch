@@ -25,7 +25,9 @@
         sendPlay,
         sendPause,
         sendSeek,
-        sendChat
+        sendChat,
+        sendBuffering,
+        expectedPosition
     } from '$lib/stores/watchTogether';
     import type { ChatMessage } from '$lib/stores/watchTogether';
     import { t } from '$lib/i18n';
@@ -630,6 +632,74 @@
             for (const e of evs) v.removeEventListener(e, follow);
         };
     });
+
+    function syncRate(r: number) {
+        const v = videoEl;
+        if (!v || holdSpeedActive || Math.abs(v.playbackRate - r) < 0.001) return;
+        v.playbackRate = r;
+    }
+
+    function syncStep() {
+        const v = videoEl;
+        if (!v || srcSwitching || v.ended) return;
+        const e = expectedPosition();
+        if (!e || (duration > 0 && e.time > duration - 0.5)) return;
+        if (!e.playing) {
+            syncRate(1);
+            if (!v.paused) v.pause();
+            if (!v.seeking && Math.abs(v.currentTime - e.time) > 0.3) v.currentTime = e.time;
+            return;
+        }
+        if (v.paused) {
+            if (v.readyState < 2 || v.seeking) return;
+            if (Math.abs(v.currentTime - e.time) > 0.3) v.currentTime = e.time;
+            v.play().catch(() => {});
+            return;
+        }
+        if (v.seeking || v.readyState < 3) return;
+        const d = e.time - v.currentTime;
+        if (Math.abs(d) > 3) {
+            v.currentTime = e.time;
+            syncRate(1);
+        } else if (Math.abs(d) < (v.playbackRate === 1 ? 0.25 : 0.05)) {
+            syncRate(1);
+        } else {
+            syncRate(Math.round((1 + Math.max(-0.1, Math.min(0.1, d * 0.2))) * 100) / 100);
+        }
+    }
+
+    const partyOn = $derived($watchTogether.active);
+    $effect(() => {
+        if (!partyOn) return;
+        const id = setInterval(syncStep, 250);
+        return () => {
+            clearInterval(id);
+            syncRate(1);
+        };
+    });
+
+    let bufTimer: ReturnType<typeof setTimeout> | undefined;
+    let bufSent = false;
+
+    function stallStart() {
+        if (!partyOn || bufTimer) return;
+        bufTimer = setTimeout(() => {
+            bufTimer = undefined;
+            if (videoEl && videoEl.readyState < 3 && !bufSent) {
+                bufSent = true;
+                sendBuffering(true);
+            }
+        }, 500);
+    }
+
+    function stallEnd() {
+        clearTimeout(bufTimer);
+        bufTimer = undefined;
+        if (bufSent) {
+            bufSent = false;
+            sendBuffering(false);
+        }
+    }
 
     async function loadStream() {
         if (!videoEl) return;
@@ -2206,10 +2276,13 @@
         }}
         onwaiting={() => {
             waiting = true;
+            stallStart();
         }}
         oncanplay={() => {
             waiting = false;
+            stallEnd();
         }}
+        onplaying={stallEnd}
     >
         {#key subCacheBust}
             {#each subtitles as sub, i (sub.media_id + ':' + sub.id)}
@@ -2222,6 +2295,13 @@
             {/each}
         {/key}
     </video>
+    {#if partyOn && $watchTogether.wait && $watchTogether.waiting.length > 0}
+        <div class="absolute top-4 inset-x-0 flex justify-center pointer-events-none z-20">
+            <span class="bg-black/65 rounded-full px-3 py-1 text-xs text-white/85">
+                {$t('player.waiting_for', { names: $watchTogether.waiting.join(', ') })}
+            </span>
+        </div>
+    {/if}
     {#if waiting && !controlsVisible}
         <div
             class="absolute inset-0 flex items-center justify-center pointer-events-none z-10"

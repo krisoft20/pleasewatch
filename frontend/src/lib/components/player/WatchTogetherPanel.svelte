@@ -2,7 +2,7 @@
     import { fly, fade } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
     import { t } from '$lib/i18n';
-    import { watchTogether, type ChatMessage } from '$lib/stores/watchTogether';
+    import { watchTogether, sendWaitMode, type ChatMessage } from '$lib/stores/watchTogether';
     import Icon from '../Icon.svelte';
 
     let {
@@ -43,6 +43,29 @@
 
     const origin = $derived(typeof window !== 'undefined' ? window.location.origin : '');
 </script>
+
+{#snippet waitToggle()}
+    <button
+        type="button"
+        role="switch"
+        aria-checked={$watchTogether.wait}
+        onclick={() => sendWaitMode(!$watchTogether.wait)}
+        class="flex items-center gap-2 text-[12px] text-gray-400 hover:text-white transition-colors"
+    >
+        <span
+            class="relative w-7 h-4 rounded-full transition-colors {$watchTogether.wait
+                ? 'bg-green-500'
+                : 'bg-white/15'}"
+        >
+            <span
+                class="absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform {$watchTogether.wait
+                    ? 'translate-x-3'
+                    : ''}"
+            ></span>
+        </span>
+        {$t('player.wait_for_all')}
+    </button>
+{/snippet}
 
 {#if $watchTogether.active && !controlsVisible && !showChat && !showSettings && !showSubtitlePicker && !showEpisodeDrawer}
     <button class="pw-chat-corner" onclick={onOpenChat} aria-label="open chat" type="button">
@@ -165,6 +188,7 @@
                     {/if}
                 </div>
                 <div class="px-2.5 pb-2.5 pt-2 border-t border-white/5">
+                    <div class="px-1 pb-2">{@render waitToggle()}</div>
                     <div class="flex items-center gap-2">
                         <input
                             bind:this={chatInputEl}
@@ -220,6 +244,7 @@
                 <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                 <span>{$watchTogether.participants} watching</span>
             </div>
+            <div class="mb-4">{@render waitToggle()}</div>
             <button
                 onclick={() => {
                     showShareModal = false;
