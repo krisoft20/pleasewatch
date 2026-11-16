@@ -23,17 +23,6 @@ One Rust binary with SQLite, a SvelteKit frontend, and a `setup.sh` that brings 
 
 ![library](docs/screenshots/library.webp)
 
-**For you if**
-
-- you have a VPS or a home server and want movies, shows, anime, manga and books in one place;
-- you watch with friends in other cities and want everyone on the same frame, not five seconds apart;
-- you learn a language from shows: a second subtitle track sits above the first, and hovering a word shows its match (en/pl/de).
-
-**Not for you if**
-
-- you need native TV or console apps. pleasewatch runs in the browser;
-- you only stream files you already have on a LAN. Jellyfin does that with less setup.
-
 ## try it
 
 ```sh
