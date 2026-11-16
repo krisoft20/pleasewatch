@@ -1,7 +1,7 @@
 <script lang="ts">
     import { fly, fade } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
-    import { t } from '$lib/i18n';
+    import { t } from '#lib/i18n.ts';
     import Icon from '../Icon.svelte';
     import SelectRow from './SelectRow.svelte';
 

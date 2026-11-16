@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type TvChannel } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type TvChannel } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
     import Player from './Player.svelte';
 
     const COUNTRY: Record<string, string> = { pl: 'Polska', uk: 'UK', us: 'USA' };

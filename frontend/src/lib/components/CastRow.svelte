@@ -1,6 +1,6 @@
 <script lang="ts">
-    import type { TmdbCastMember } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import type { TmdbCastMember } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
 
     let { cast, onSelect }: { cast: TmdbCastMember[]; onSelect: (id: number) => void } = $props();
 

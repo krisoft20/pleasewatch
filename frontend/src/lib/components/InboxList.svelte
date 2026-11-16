@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { inbox, sharePath } from '$lib/inbox.svelte';
-    import { bookCoverSrc } from '$lib/bookCover';
-    import { t } from '$lib/i18n.svelte';
+    import { inbox, sharePath } from '#lib/inbox.svelte.ts';
+    import { bookCoverSrc } from '#lib/bookCover.ts';
+    import { t } from '#lib/i18n.svelte.ts';
 
     let { onpick }: { onpick: () => void } = $props();
 
@@ -20,7 +20,12 @@
 {:else}
     <div class="pw-inbox-list">
         {#each inbox.items as s (s.id)}
-            <a class="pw-inbox-row" class:is-new={inbox.fresh.has(s.id)} href={sharePath(s.kind, s.ref_key)} onclick={onpick}>
+            <a
+                class="pw-inbox-row"
+                class:is-new={inbox.fresh.has(s.id)}
+                href={sharePath(s.kind, s.ref_key)}
+                onclick={onpick}
+            >
                 {#if s.cover_url}
                     <img src={bookCoverSrc(s.cover_url)} alt="" loading="lazy" />
                 {:else}

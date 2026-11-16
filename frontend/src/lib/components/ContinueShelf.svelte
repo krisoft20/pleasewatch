@@ -1,7 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { api, type ContinueItem } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type ContinueItem } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
 
     let { items = $bindable<ContinueItem[]>([]) }: { items: ContinueItem[] } = $props();
 

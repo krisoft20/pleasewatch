@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onDestroy, onMount } from 'svelte';
-    import { api, type ShareKind } from '$lib/api';
-    import { sharePath } from '$lib/inbox.svelte';
-    import { t } from '$lib/i18n.svelte';
-    import { clickOutside } from '$lib/dismiss';
+    import { api, type ShareKind } from '#lib/api.ts';
+    import { sharePath } from '#lib/inbox.svelte.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import { clickOutside } from '#lib/dismiss.ts';
 
     let {
         kind,
@@ -85,7 +85,10 @@
         if (sent[id] === 'busy' || sent[id] === 'ok') return;
         sent[id] = 'wait';
         notes.set(id, note.trim());
-        timers.set(id, setTimeout(() => deliver(id), UNDO_MS));
+        timers.set(
+            id,
+            setTimeout(() => deliver(id), UNDO_MS)
+        );
     }
 
     async function deliver(id: string) {

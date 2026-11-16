@@ -1,8 +1,8 @@
 <script lang="ts">
     import { fly, fade } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
-    import type { MediaSubtitle, SubSearchResult } from '$lib/types';
-    import { t } from '$lib/i18n';
+    import type { MediaSubtitle, SubSearchResult } from '#lib/types.ts';
+    import { t } from '#lib/i18n.ts';
     import Icon from '../Icon.svelte';
     import LangPicker from './LangPicker.svelte';
 
@@ -153,7 +153,10 @@
     }
 
     function bareLabel(raw: string | null | undefined): string {
-        return (raw ?? '').replace(/\([^)]*\)/g, '').trim().toLowerCase();
+        return (raw ?? '')
+            .replace(/\([^)]*\)/g, '')
+            .trim()
+            .toLowerCase();
     }
 
     function isUnknownLabel(raw: string | null | undefined): boolean {

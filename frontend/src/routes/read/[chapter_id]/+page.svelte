@@ -2,8 +2,8 @@
     import { onMount, tick } from 'svelte';
     import { goto } from '$app/navigation';
     import { page } from '$app/state';
-    import { api, type MangaChapter, type MangaDetail } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type MangaChapter, type MangaDetail } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
 
     type Mode = 'paged' | 'double' | 'webtoon';
     type Fit = 'screen' | 'width' | 'height' | 'original';
@@ -257,26 +257,26 @@
         }
         const pi = prevIdx();
         if (pi >= 0) idx = pi;
-        else if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`, { replaceState: true });
+        else if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`, { replace: true });
     }
 
     function toNextChapter() {
-        if (nextCh) goto(`/read/${nextCh.id}?md=${mdId}`, { replaceState: true });
+        if (nextCh) goto(`/read/${nextCh.id}?md=${mdId}`, { replace: true });
         else exit();
     }
 
     function toPrevChapter() {
-        if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`, { replaceState: true });
+        if (prevCh) goto(`/read/${prevCh.id}?md=${mdId}`, { replace: true });
         else exit();
     }
 
     function exit() {
         if (mdId) {
-            goto(`/manga/${mdId}`, { replaceState: true });
+            goto(`/manga/${mdId}`, { replace: true });
         } else if (history.length > 1) {
             history.back();
         } else {
-            goto('/', { replaceState: true });
+            goto('/', { replace: true });
         }
     }
 
@@ -551,7 +551,7 @@
                 {#if prevCh}
                     <button
                         class="pw-reader-ch"
-                        onclick={() => goto(`/read/${prevCh.id}?md=${mdId}`, { replaceState: true })}
+                        onclick={() => goto(`/read/${prevCh.id}?md=${mdId}`, { replace: true })}
                     >
                         <svg
                             width="15"
@@ -571,7 +571,7 @@
                 {#if nextCh}
                     <button
                         class="pw-reader-ch"
-                        onclick={() => goto(`/read/${nextCh.id}?md=${mdId}`, { replaceState: true })}
+                        onclick={() => goto(`/read/${nextCh.id}?md=${mdId}`, { replace: true })}
                     >
                         ch. {nextCh.chapter ?? '?'}
                         <svg

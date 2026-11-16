@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type ClipInfo } from '$lib/api';
-    import Icon from '$lib/components/Icon.svelte';
+    import { api, type ClipInfo } from '#lib/api.ts';
+    import Icon from '#lib/components/Icon.svelte';
     import type { CountSetter } from './adminUtils';
 
     type Props = {

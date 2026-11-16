@@ -1,8 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type BookShelfItem, type User } from '$lib/api';
-    import { bookCoverNeedsRefresh, bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t, i18n } from '$lib/i18n.svelte';
+    import { api, type BookShelfItem, type User } from '#lib/api.ts';
+    import { bookCoverNeedsRefresh, bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t, i18n } from '#lib/i18n.svelte.ts';
     import BookShelf from './BookShelf.svelte';
     import BookGreeting from './BookGreeting.svelte';
     import DailyQuote from './DailyQuote.svelte';

@@ -1,4 +1,4 @@
-import { api, type Share, type ShareKind } from '$lib/api';
+import { api, type Share, type ShareKind } from '#lib/api.ts';
 
 const POLL_MS = 45_000;
 

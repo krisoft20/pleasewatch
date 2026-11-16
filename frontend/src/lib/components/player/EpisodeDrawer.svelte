@@ -2,8 +2,8 @@
     import { onMount } from 'svelte';
     import { fly, fade } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
-    import type { EpisodeRecord, TmdbEpisode, WatchProgress } from '$lib/types';
-    import { api } from '$lib/api';
+    import type { EpisodeRecord, TmdbEpisode, WatchProgress } from '#lib/types.ts';
+    import { api } from '#lib/api.ts';
     import Icon from '../Icon.svelte';
 
     let {
@@ -129,10 +129,7 @@
                             />
                         </button>
                         {#if showSeasonDropdown}
-                            <div
-                                class="pw-season-menu"
-                                in:fly={{ y: -8, duration: 150 }}
-                            >
+                            <div class="pw-season-menu" in:fly={{ y: -8, duration: 150 }}>
                                 {#each seasons as season}
                                     <button
                                         onclick={() => switchSeason(season)}
@@ -278,10 +275,7 @@
                             />
                         </button>
                         {#if showSeasonDropdown}
-                            <div
-                                class="pw-season-menu pw-season-menu-small"
-                                in:fly={{ y: -6, duration: 150 }}
-                            >
+                            <div class="pw-season-menu pw-season-menu-small" in:fly={{ y: -6, duration: 150 }}>
                                 {#each seasons as season}
                                     <button
                                         onclick={() => switchSeason(season)}

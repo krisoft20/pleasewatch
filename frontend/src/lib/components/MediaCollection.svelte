@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type CollectionItem, type CollectionKind, type CollectionStatus } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type CollectionItem, type CollectionKind, type CollectionStatus } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
     import CollectionCard, { type CollectionCardItem } from './CollectionCard.svelte';
 
     type Filter = 'all' | CollectionKind;

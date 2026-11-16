@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type WatchStats } from '$lib/api';
-    import Icon from '$lib/components/Icon.svelte';
+    import { api, type WatchStats } from '#lib/api.ts';
+    import Icon from '#lib/components/Icon.svelte';
     import { fmtWatchTime, type CountSetter } from './adminUtils';
 
     type Props = {

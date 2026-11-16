@@ -2,8 +2,8 @@
     import { onMount, onDestroy, tick, untrack } from 'svelte';
     import { fly, fade } from 'svelte/transition';
     import Hls from 'hls.js';
-    import type { MediaSubtitle, EpisodeRecord, TmdbEpisode } from '$lib/types';
-    import { api } from '$lib/api';
+    import type { MediaSubtitle, EpisodeRecord, TmdbEpisode } from '#lib/types.ts';
+    import { api } from '#lib/api.ts';
     import EpisodeDrawer from './player/EpisodeDrawer.svelte';
     import AudioSubsPanel from './player/AudioSubsPanel.svelte';
     import PlayerSettingsPanel from './player/PlayerSettingsPanel.svelte';
@@ -28,9 +28,9 @@
         sendChat,
         sendBuffering,
         expectedPosition
-    } from '$lib/stores/watchTogether';
-    import type { ChatMessage } from '$lib/stores/watchTogether';
-    import { t } from '$lib/i18n';
+    } from '#lib/stores/watchTogether.ts';
+    import type { ChatMessage } from '#lib/stores/watchTogether.ts';
+    import { t } from '#lib/i18n.ts';
 
     let {
         src,
@@ -82,7 +82,7 @@
         onNextEpisode?: (() => void) | null;
         subUrlBuilder?: ((sub: MediaSubtitle) => string) | null;
         partyMode?: boolean;
-        episodeProgress?: Map<string, import('$lib/types').WatchProgress>;
+        episodeProgress?: Map<string, import('#lib/types.ts').WatchProgress>;
         introStart?: number | null;
         introEnd?: number | null;
         creditsStart?: number | null;
@@ -162,7 +162,7 @@
             localStorage.setItem('player-sub-search-lang', subSearchLang);
         } catch {}
     });
-    let subSearchResults = $state<import('$lib/types').SubSearchResult[]>([]);
+    let subSearchResults = $state<import('#lib/types.ts').SubSearchResult[]>([]);
     let subSearching = $state(false);
     let subSearched = $state(false);
     let subDownloading = $state<string | null>(null);
@@ -1147,7 +1147,7 @@
         }
     }
 
-    async function downloadSubResult(result: import('$lib/types').SubSearchResult) {
+    async function downloadSubResult(result: import('#lib/types.ts').SubSearchResult) {
         if (!mediaId) return;
         subDownloading = result.url;
         subJobLabel = 'Fetching subtitle';

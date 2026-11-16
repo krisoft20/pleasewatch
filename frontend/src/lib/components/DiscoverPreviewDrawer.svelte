@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { api, type TmdbDetail, type TmdbSearchItem, type TmdbVideo } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
-    import Icon from '$lib/components/Icon.svelte';
+    import { api, type TmdbDetail, type TmdbSearchItem, type TmdbVideo } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import Icon from '#lib/components/Icon.svelte';
 
     let {
         item,
@@ -23,9 +23,7 @@
     const backdrop = $derived(detail?.backdrop_url ?? item.backdrop_url);
     const poster = $derived(detail?.poster_url ?? item.poster_url);
     const genres = $derived(
-        detail?.genres?.length
-            ? detail.genres
-            : (item.genre_ids ?? []).map((id) => genreNames[id]).filter(Boolean)
+        detail?.genres?.length ? detail.genres : (item.genre_ids ?? []).map((id) => genreNames[id]).filter(Boolean)
     );
 
     $effect(() => {

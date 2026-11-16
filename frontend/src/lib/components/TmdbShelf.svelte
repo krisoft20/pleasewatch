@@ -1,7 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import type { TmdbSearchItem } from '$lib/api';
-    import Icon from '$lib/components/Icon.svelte';
+    import type { TmdbSearchItem } from '#lib/api.ts';
+    import Icon from '#lib/components/Icon.svelte';
 
     let {
         title,

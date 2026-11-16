@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api } from '$lib/api';
-    import Shell from '$lib/components/Shell.svelte';
-    import Wordmark from '$lib/components/Wordmark.svelte';
+    import { api } from '#lib/api.ts';
+    import Shell from '#lib/components/Shell.svelte';
+    import Wordmark from '#lib/components/Wordmark.svelte';
 
     let userInput = $state<HTMLInputElement>();
     let u = $state('');
@@ -18,7 +18,7 @@
         busy = true;
         try {
             await api.login(u, p);
-            goto('/', { replaceState: true });
+            goto('/', { replace: true });
         } catch (caught) {
             err = caught instanceof Error ? caught.message : 'login failed';
         } finally {

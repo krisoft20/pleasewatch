@@ -11,17 +11,17 @@
         type TmdbSearchItem,
         type TmdbVideo,
         type User
-    } from '$lib/api';
-    import TopBar from '$lib/components/TopBar.svelte';
-    import TrailerModal from '$lib/components/TrailerModal.svelte';
-    import TorrentPicker from '$lib/components/TorrentPicker.svelte';
-    import CastModal from '$lib/components/CastModal.svelte';
-    import CastRow from '$lib/components/CastRow.svelte';
-    import CollectionRow from '$lib/components/CollectionRow.svelte';
-    import CollectionControl from '$lib/components/CollectionControl.svelte';
-    import TmdbShelf from '$lib/components/TmdbShelf.svelte';
-    import ShareButton from '$lib/components/ShareButton.svelte';
-    import { t } from '$lib/i18n.svelte';
+    } from '#lib/api.ts';
+    import TopBar from '#lib/components/TopBar.svelte';
+    import TrailerModal from '#lib/components/TrailerModal.svelte';
+    import TorrentPicker from '#lib/components/TorrentPicker.svelte';
+    import CastModal from '#lib/components/CastModal.svelte';
+    import CastRow from '#lib/components/CastRow.svelte';
+    import CollectionRow from '#lib/components/CollectionRow.svelte';
+    import CollectionControl from '#lib/components/CollectionControl.svelte';
+    import TmdbShelf from '#lib/components/TmdbShelf.svelte';
+    import ShareButton from '#lib/components/ShareButton.svelte';
+    import { t } from '#lib/i18n.svelte.ts';
 
     type WsUpdate = {
         download_id: string;
@@ -59,7 +59,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         connectWs();
@@ -483,7 +483,7 @@
                                     {#if inLibrary && media?.file_path}
                                         <button
                                             class="pw-v1-btn-watch"
-                                            onclick={() => goto(`/watch/${media!.id}`, { replaceState: true })}
+                                            onclick={() => goto(`/watch/${media!.id}`, { replace: true })}
                                         >
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"
                                                 ><path d="M8 5v14l11-7z" /></svg

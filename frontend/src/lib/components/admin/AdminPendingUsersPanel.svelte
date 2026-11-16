@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type User } from '$lib/api';
+    import { api, type User } from '#lib/api.ts';
     import { fmtDate, type CountSetter } from './adminUtils';
 
     type Props = {

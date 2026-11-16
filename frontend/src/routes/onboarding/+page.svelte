@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api, type AdminSettings, type User, type VpnStatus } from '$lib/api';
+    import { api, type AdminSettings, type User, type VpnStatus } from '#lib/api.ts';
 
     type Step = 'start' | 'metadata' | 'downloads' | 'vpn' | 'done';
 
@@ -61,11 +61,11 @@
         try {
             me = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         if (me.role !== 'admin') {
-            goto('/', { replaceState: true });
+            goto('/', { replace: true });
             return;
         }
         await refreshSetup();
@@ -164,11 +164,11 @@
     }
 
     function finish() {
-        goto('/', { replaceState: true });
+        goto('/', { replace: true });
     }
 
     function adminSettings() {
-        goto('/admin?tab=settings', { replaceState: true });
+        goto('/admin?tab=settings', { replace: true });
     }
 </script>
 

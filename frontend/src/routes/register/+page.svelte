@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api } from '$lib/api';
-    import Shell from '$lib/components/Shell.svelte';
-    import Wordmark from '$lib/components/Wordmark.svelte';
+    import { api } from '#lib/api.ts';
+    import Shell from '#lib/components/Shell.svelte';
+    import Wordmark from '#lib/components/Wordmark.svelte';
 
     let userInput = $state<HTMLInputElement>();
     let u = $state('');
@@ -23,7 +23,7 @@
         try {
             const r = await api.register(u, e, p);
             if (r.role === 'admin') {
-                goto('/login', { replaceState: true });
+                goto('/login', { replace: true });
                 return;
             }
             ok = { username: u, email: e };

@@ -2,14 +2,14 @@
     import { onDestroy, onMount } from 'svelte';
     import { goto, afterNavigate } from '$app/navigation';
     import { page } from '$app/state';
-    import { api, type BookDetail, type BookHit, type BookSource, type User } from '$lib/api';
-    import { bookCoverNeedsRefresh, bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t, plural } from '$lib/i18n.svelte';
-    import { clickOutside } from '$lib/dismiss';
-    import TopBar from '$lib/components/TopBar.svelte';
-    import TorrentPicker from '$lib/components/TorrentPicker.svelte';
-    import AuthorModal from '$lib/components/AuthorModal.svelte';
-    import ShareButton from '$lib/components/ShareButton.svelte';
+    import { api, type BookDetail, type BookHit, type BookSource, type User } from '#lib/api.ts';
+    import { bookCoverNeedsRefresh, bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t, plural } from '#lib/i18n.svelte.ts';
+    import { clickOutside } from '#lib/dismiss.ts';
+    import TopBar from '#lib/components/TopBar.svelte';
+    import TorrentPicker from '#lib/components/TorrentPicker.svelte';
+    import AuthorModal from '#lib/components/AuthorModal.svelte';
+    import ShareButton from '#lib/components/ShareButton.svelte';
 
     const olKey = $derived(page.params.ol_key ?? '');
 
@@ -101,7 +101,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         await bootstrap(olKey);
@@ -247,11 +247,11 @@
     }
 
     function read() {
-        goto(`/read-book/${olKey}`, { replaceState: true });
+        goto(`/read-book/${olKey}`, { replace: true });
     }
 
     function readAgain() {
-        goto(`/read-book/${olKey}?restart=1`, { replaceState: true });
+        goto(`/read-book/${olKey}?restart=1`, { replace: true });
     }
 
     async function setShelf(status: string) {

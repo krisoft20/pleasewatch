@@ -1,6 +1,6 @@
 <script lang="ts">
-    import Shell from '$lib/components/Shell.svelte';
-    import Wordmark from '$lib/components/Wordmark.svelte';
+    import Shell from '#lib/components/Shell.svelte';
+    import Wordmark from '#lib/components/Wordmark.svelte';
 </script>
 
 <svelte:head><title>about - pleasewatch</title></svelte:head>

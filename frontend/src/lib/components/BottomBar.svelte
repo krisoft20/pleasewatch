@@ -2,14 +2,14 @@
     import { tick } from 'svelte';
     import { goto, preloadData } from '$app/navigation';
     import { page } from '$app/state';
-    import { api, type BookHit, type MangaHit, type TmdbSearchItem, type User } from '$lib/api';
-    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t } from '$lib/i18n.svelte';
-    import { category, CATEGORIES, type Category } from '$lib/category.svelte';
-    import { clickOutside } from '$lib/dismiss';
-    import UserMenu from '$lib/components/UserMenu.svelte';
-    import InboxList from '$lib/components/InboxList.svelte';
-    import { inbox } from '$lib/inbox.svelte';
+    import { api, type BookHit, type MangaHit, type TmdbSearchItem, type User } from '#lib/api.ts';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import { category, CATEGORIES, type Category } from '#lib/category.svelte.ts';
+    import { clickOutside } from '#lib/dismiss.ts';
+    import UserMenu from '#lib/components/UserMenu.svelte';
+    import InboxList from '#lib/components/InboxList.svelte';
+    import { inbox } from '#lib/inbox.svelte.ts';
 
     let user = $state<User | null>(null);
     let sheet = $state<'cat' | 'search' | 'inbox' | 'me' | null>(null);

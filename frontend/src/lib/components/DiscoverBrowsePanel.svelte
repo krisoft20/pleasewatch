@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { api, type DiscoverGenresResponse, type TmdbGenre, type TmdbSearchItem } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
-    import Icon from '$lib/components/Icon.svelte';
+    import { api, type DiscoverGenresResponse, type TmdbGenre, type TmdbSearchItem } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import Icon from '#lib/components/Icon.svelte';
 
     type Kind = 'all' | 'movie' | 'tv';
 

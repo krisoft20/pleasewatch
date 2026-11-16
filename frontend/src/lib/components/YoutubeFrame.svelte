@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { t } from '$lib/i18n';
+    import { t } from '#lib/i18n.ts';
     import Icon from './Icon.svelte';
 
     type Props = { id: string; title: string; onBack: () => void };

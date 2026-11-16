@@ -10,10 +10,10 @@
         type TmdbEpisode,
         type MediaSubtitle,
         type User
-    } from '$lib/api';
-    import Player from '$lib/components/Player.svelte';
-    import { i18n, subLangCode } from '$lib/i18n.svelte';
-    import { watchTogether } from '$lib/stores/watchTogether';
+    } from '#lib/api.ts';
+    import Player from '#lib/components/Player.svelte';
+    import { i18n, subLangCode } from '#lib/i18n.svelte.ts';
+    import { watchTogether } from '#lib/stores/watchTogether.ts';
     import { get } from 'svelte/store';
 
     function announcePartyEpisode(epId: string) {
@@ -95,7 +95,7 @@
     onMount(async () => {
         const [u, m] = await Promise.all([api.me().catch(() => null), api.getMedia(id).catch(() => null)]);
         if (!u) {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         user = u;
@@ -146,11 +146,11 @@
 
     function back() {
         if (!media?.tmdb_id) {
-            goto('/', { replaceState: true });
+            goto('/', { replace: true });
             return;
         }
         goto(media.media_type === 'tv' ? `/tv/${media.tmdb_id}` : `/movie/${media.tmdb_id}`, {
-            replaceState: true
+            replace: true
         });
     }
 

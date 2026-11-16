@@ -2,10 +2,10 @@
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { page } from '$app/state';
-    import { api, type SeriesDetail, type User } from '$lib/api';
-    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t } from '$lib/i18n.svelte';
-    import TopBar from '$lib/components/TopBar.svelte';
+    import { api, type SeriesDetail, type User } from '#lib/api.ts';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import TopBar from '#lib/components/TopBar.svelte';
 
     const rawName = $derived(decodeURIComponent(page.params.name ?? ''));
 
@@ -18,7 +18,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         try {

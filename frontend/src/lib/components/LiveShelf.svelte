@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type LiveGame } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type LiveGame } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
     import {
         abbrOf,
         countdown,
@@ -13,7 +13,7 @@
         ink,
         livePick,
         pairColors
-    } from '$lib/live.svelte';
+    } from '#lib/live.svelte.ts';
     import Player from './Player.svelte';
     import YoutubeFrame from './YoutubeFrame.svelte';
 

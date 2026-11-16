@@ -14,17 +14,17 @@
         type TmdbVideo,
         type User,
         type WatchProgress
-    } from '$lib/api';
-    import TopBar from '$lib/components/TopBar.svelte';
-    import TrailerModal from '$lib/components/TrailerModal.svelte';
-    import TorrentPicker from '$lib/components/TorrentPicker.svelte';
-    import PackFilesModal from '$lib/components/PackFilesModal.svelte';
-    import CastModal from '$lib/components/CastModal.svelte';
-    import CastRow from '$lib/components/CastRow.svelte';
-    import CollectionControl from '$lib/components/CollectionControl.svelte';
-    import TmdbShelf from '$lib/components/TmdbShelf.svelte';
-    import ShareButton from '$lib/components/ShareButton.svelte';
-    import { t, plural } from '$lib/i18n.svelte';
+    } from '#lib/api.ts';
+    import TopBar from '#lib/components/TopBar.svelte';
+    import TrailerModal from '#lib/components/TrailerModal.svelte';
+    import TorrentPicker from '#lib/components/TorrentPicker.svelte';
+    import PackFilesModal from '#lib/components/PackFilesModal.svelte';
+    import CastModal from '#lib/components/CastModal.svelte';
+    import CastRow from '#lib/components/CastRow.svelte';
+    import CollectionControl from '#lib/components/CollectionControl.svelte';
+    import TmdbShelf from '#lib/components/TmdbShelf.svelte';
+    import ShareButton from '#lib/components/ShareButton.svelte';
+    import { t, plural } from '#lib/i18n.svelte.ts';
 
     type WsUpdate = {
         download_id: string;
@@ -179,7 +179,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         connectWs();
@@ -709,9 +709,7 @@
         if (!packDownload) return;
         packFilesFor = {
             id: packDownload.id,
-            title:
-                packDownload.title ??
-                `${title} S${String(activeSeason ?? 0).padStart(2, '0')}`
+            title: packDownload.title ?? `${title} S${String(activeSeason ?? 0).padStart(2, '0')}`
         };
     }
     const seasonPackActive = $derived.by(() => {
@@ -1143,11 +1141,9 @@
                                             stroke-width="2"
                                             stroke-linecap="round"
                                             stroke-linejoin="round"
-                                            ><path d="M9 6h11M9 12h11M9 18h11" /><path
-                                                d="M4 6l1.5 1.5L8 5"
-                                            /><path d="M4 12l1.5 1.5L8 11" /><path
-                                                d="M4 18l1.5 1.5L8 17"
-                                            /></svg
+                                            ><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6l1.5 1.5L8 5" /><path
+                                                d="M4 12l1.5 1.5L8 11"
+                                            /><path d="M4 18l1.5 1.5L8 17" /></svg
                                         >
                                         {t('media.skip_episodes')}
                                     </button>
@@ -1266,11 +1262,7 @@
                                             stored?.status === 'processing' ||
                                             (epDl !== undefined && epDl >= 1 && !isReady)}
                                         {@const isDownloading =
-                                            !isReady &&
-                                            !isProcessing &&
-                                            !isSkipped &&
-                                            epDl !== undefined &&
-                                            epDl < 1}
+                                            !isReady && !isProcessing && !isSkipped && epDl !== undefined && epDl < 1}
                                         {@const dlPct = epDl !== undefined ? Math.round(epDl * 100) : 0}
                                         {@const ringR = 18}
                                         {@const ringC = 2 * Math.PI * ringR}
@@ -1289,12 +1281,12 @@
                                             class:is-watched={isWatched}
                                             onclick={() => {
                                                 if (isReady && stored)
-                                                    goto(`/watch/${media!.id}?ep=${stored.id}`, { replaceState: true });
+                                                    goto(`/watch/${media!.id}?ep=${stored.id}`, { replace: true });
                                             }}
                                             onkeydown={(e) => {
                                                 if ((e.key === 'Enter' || e.key === ' ') && isReady && stored) {
                                                     e.preventDefault();
-                                                    goto(`/watch/${media!.id}?ep=${stored.id}`, { replaceState: true });
+                                                    goto(`/watch/${media!.id}?ep=${stored.id}`, { replace: true });
                                                 }
                                             }}
                                             role="button"
@@ -1497,13 +1489,12 @@
                                             class="pw-ep-card is-ready"
                                             class:is-watched={isWatched}
                                             onclick={() => {
-                                                if (media)
-                                                    goto(`/watch/${media.id}?ep=${ep.id}`, { replaceState: true });
+                                                if (media) goto(`/watch/${media.id}?ep=${ep.id}`, { replace: true });
                                             }}
                                             onkeydown={(e) => {
                                                 if ((e.key === 'Enter' || e.key === ' ') && media) {
                                                     e.preventDefault();
-                                                    goto(`/watch/${media.id}?ep=${ep.id}`, { replaceState: true });
+                                                    goto(`/watch/${media.id}?ep=${ep.id}`, { replace: true });
                                                 }
                                             }}
                                             role="button"
@@ -1689,10 +1680,6 @@
     {/if}
 
     {#if packFilesFor}
-        <PackFilesModal
-            downloadId={packFilesFor.id}
-            title={packFilesFor.title}
-            onClose={() => (packFilesFor = null)}
-        />
+        <PackFilesModal downloadId={packFilesFor.id} title={packFilesFor.title} onClose={() => (packFilesFor = null)} />
     {/if}
 {/if}

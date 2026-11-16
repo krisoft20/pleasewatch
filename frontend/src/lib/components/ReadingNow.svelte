@@ -1,7 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t, plural } from '$lib/i18n.svelte';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t, plural } from '#lib/i18n.svelte.ts';
 
     type Item = {
         ol_key: string;

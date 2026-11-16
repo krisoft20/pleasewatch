@@ -2,9 +2,9 @@
     import { onMount, tick } from 'svelte';
     import { page } from '$app/state';
     import { goto } from '$app/navigation';
-    import { api, type PartyInfo, type MediaSubtitle } from '$lib/api';
-    import { joinSession, leaveSession, setRemoteCallbacks, watchTogether } from '$lib/stores/watchTogether';
-    import Player from '$lib/components/Player.svelte';
+    import { api, type PartyInfo, type MediaSubtitle } from '#lib/api.ts';
+    import { joinSession, leaveSession, setRemoteCallbacks, watchTogether } from '#lib/stores/watchTogether.ts';
+    import Player from '#lib/components/Player.svelte';
 
     const code = $derived(page.params.code ?? '');
 

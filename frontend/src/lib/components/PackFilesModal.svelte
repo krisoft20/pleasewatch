@@ -1,10 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type PackFile } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type PackFile } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
 
-    let { downloadId, title, onClose }: { downloadId: string; title: string; onClose: () => void } =
-        $props();
+    let { downloadId, title, onClose }: { downloadId: string; title: string; onClose: () => void } = $props();
 
     let files = $state<PackFile[]>([]);
     let loading = $state(true);

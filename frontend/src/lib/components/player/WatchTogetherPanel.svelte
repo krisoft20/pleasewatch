@@ -1,8 +1,8 @@
 <script lang="ts">
     import { fly, fade } from 'svelte/transition';
     import { cubicOut } from 'svelte/easing';
-    import { t } from '$lib/i18n';
-    import { watchTogether, sendWaitMode, type ChatMessage } from '$lib/stores/watchTogether';
+    import { t } from '#lib/i18n.ts';
+    import { watchTogether, sendWaitMode, type ChatMessage } from '#lib/stores/watchTogether.ts';
     import Icon from '../Icon.svelte';
 
     let {

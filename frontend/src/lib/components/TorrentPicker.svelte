@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type TorrentOption, type AdminSettings } from '$lib/api';
+    import { api, type TorrentOption, type AdminSettings } from '#lib/api.ts';
     import CopyCode from './CopyCode.svelte';
 
     type Props = {
@@ -814,14 +814,18 @@
                                 {#if t.video_codec}<span class="pw-tp-pill pw-tp-codec">{t.video_codec}</span>{/if}
                                 {#if t.release_group}<span class="pw-tp-pill pw-tp-grp">{t.release_group}</span>{/if}
                                 <span class="pw-tp-src">{t.provider}</span>
-                                {#if t.aggregator}<span class="pw-tp-eng pw-tp-eng-{t.aggregator}">{t.aggregator}</span>{/if}
+                                {#if t.aggregator}<span class="pw-tp-eng pw-tp-eng-{t.aggregator}">{t.aggregator}</span
+                                    >{/if}
                             </div>
                             {#if extras.length > 0}<p class="pw-tp-extra">{extras.join(' · ')}</p>{/if}
                             {#if rowErr[key]}<p class="pw-tp-rowerr" role="alert">couldn't start: {rowErr[key]}</p>{/if}
                         </div>
                         <div class="pw-tp-nums">
                             <span class="pw-tp-size" class:is-huge={huge(t)}>{fmtSize(t.size)}</span>
-                            <span class="pw-tp-seeds" class:is-dead={t.seeds === 0} title="{t.seeds} seeds, {t.peers} peers"
+                            <span
+                                class="pw-tp-seeds"
+                                class:is-dead={t.seeds === 0}
+                                title="{t.seeds} seeds, {t.peers} peers"
                                 >{t.seeds === 0 ? 'dead' : `${t.seeds} seeds`}</span
                             >
                         </div>

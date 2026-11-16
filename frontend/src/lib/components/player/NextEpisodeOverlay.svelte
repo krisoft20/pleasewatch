@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { EpisodeRecord } from '$lib/types';
+    import type { EpisodeRecord } from '#lib/types.ts';
 
     let {
         episode: _episode,

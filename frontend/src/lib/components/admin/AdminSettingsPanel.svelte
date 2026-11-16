@@ -1,8 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type AdminSettings, type AdminSettingsUpdate, type VpnStatus } from '$lib/api';
-    import CopyCode from '$lib/components/CopyCode.svelte';
-    import Icon from '$lib/components/Icon.svelte';
+    import { api, type AdminSettings, type AdminSettingsUpdate, type VpnStatus } from '#lib/api.ts';
+    import CopyCode from '#lib/components/CopyCode.svelte';
+    import Icon from '#lib/components/Icon.svelte';
     import KeyList from './KeyList.svelte';
 
     type Shell = 'unix' | 'pwsh' | 'cmd';

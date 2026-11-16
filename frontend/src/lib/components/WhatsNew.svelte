@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { fade } from 'svelte/transition';
-    import { api, type TvChannel } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
-    import { category } from '$lib/category.svelte';
+    import { api, type TvChannel } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import { category } from '#lib/category.svelte.ts';
 
     const RELEASE = '2026-10b';
     const PICKS = ['Polsat', 'TVP Info', 'TV Puls', 'Polsat News', 'TV4', 'Puls 2'];

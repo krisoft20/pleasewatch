@@ -1,6 +1,6 @@
 <script lang="ts">
-    import type { User } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
+    import type { User } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
 
     type ReadingItem = { ol_key: string; title: string; percent: number | null };
 
@@ -53,7 +53,9 @@
 
 <div class="pw-greet">
     <h2 class="pw-greet-hi">
-        {t('books.greet.' + greet)}{#if name}, <span class="pw-greet-name">{name}</span>{/if}{#if greet === 'late'}<span class="pw-greet-late-mark">?</span>{/if}
+        {t('books.greet.' + greet)}{#if name}, <span class="pw-greet-name">{name}</span>{/if}{#if greet === 'late'}<span
+                class="pw-greet-late-mark">?</span
+            >{/if}
     </h2>
     <div class="pw-greet-sub-row">
         <p class="pw-greet-sub">{t(sub.k, sub.v)}</p>

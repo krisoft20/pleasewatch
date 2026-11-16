@@ -1,8 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api, type TmdbPersonDetail } from '$lib/api';
-    import { t, i18n } from '$lib/i18n.svelte';
+    import { api, type TmdbPersonDetail } from '#lib/api.ts';
+    import { t, i18n } from '#lib/i18n.svelte.ts';
 
     let { personId, onClose }: { personId: number; onClose: () => void } = $props();
 

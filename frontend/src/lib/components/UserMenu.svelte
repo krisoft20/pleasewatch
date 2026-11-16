@@ -1,8 +1,8 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { api, type User } from '$lib/api';
-    import { i18n, t, LANGS } from '$lib/i18n.svelte';
-    import Flag from '$lib/components/Flag.svelte';
+    import { api, type User } from '#lib/api.ts';
+    import { i18n, t, LANGS } from '#lib/i18n.svelte.ts';
+    import Flag from '#lib/components/Flag.svelte';
 
     let { user, onclose }: { user: User; onclose: () => void } = $props();
 
@@ -17,7 +17,7 @@
         try {
             await api.logout();
         } catch {}
-        goto('/login', { replaceState: true });
+        goto('/login', { replace: true });
     }
 </script>
 

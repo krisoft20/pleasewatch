@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api, type DailyQuote } from '$lib/api';
-    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type DailyQuote } from '#lib/api.ts';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t } from '#lib/i18n.svelte.ts';
 
     let quote = $state<DailyQuote | null>(null);
     let tried = $state(false);

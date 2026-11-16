@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount, onDestroy, tick } from 'svelte';
-    import { goto, replaceState } from '$app/navigation';
+    import { goto } from '$app/navigation';
     import { page } from '$app/state';
-    import { api, type BookDetail, type BookMark } from '$lib/api';
-    import { t, plural } from '$lib/i18n.svelte';
+    import { api, type BookDetail, type BookMark } from '#lib/api.ts';
+    import { t, plural } from '#lib/i18n.svelte.ts';
 
     const olKey = $derived(page.params.ol_key ?? '');
     const PREFS_KEY = 'pw-book-prefs';
@@ -404,7 +404,7 @@
     onMount(async () => {
         readPrefs();
 
-        api.me().catch(() => goto('/login', { replaceState: true }));
+        api.me().catch(() => goto('/login', { replace: true }));
         const restart = page.url.searchParams.get('restart') === '1';
         const jumpCfi = page.url.searchParams.get('cfi');
         const detailP = api.bookDetail(olKey);
@@ -489,7 +489,7 @@
             await tick();
             const initialCfi = restart ? undefined : (jumpCfi ?? detail.progress?.cfi ?? undefined);
             await Promise.race([mountRendition(initialCfi), deadline]);
-            if (restart || jumpCfi) replaceState(`/read-book/${olKey}`, {});
+            if (restart || jumpCfi) goto(`/read-book/${olKey}`, { shallow: true, replace: true, state: {} });
             loadLocations();
         } catch (e) {
             console.error('[reader] epub failed', e);
@@ -644,7 +644,7 @@
     }
 
     function exit() {
-        goto(`/book/${olKey}`, { replaceState: true });
+        goto(`/book/${olKey}`, { replace: true });
     }
 
     function download() {

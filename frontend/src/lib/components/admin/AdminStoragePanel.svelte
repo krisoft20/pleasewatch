@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type StorageMediaItem, type StorageView } from '$lib/api';
-    import Icon from '$lib/components/Icon.svelte';
+    import { api, type StorageMediaItem, type StorageView } from '#lib/api.ts';
+    import Icon from '#lib/components/Icon.svelte';
     import { fmtBytes, fmtSize, storageColor, type CountSetter } from './adminUtils';
 
     type Props = {

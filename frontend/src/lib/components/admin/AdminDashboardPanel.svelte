@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api, type AppMetrics, type HealthCheck, type Insight, type SystemMetrics } from '$lib/api';
+    import { api, type AppMetrics, type HealthCheck, type Insight, type SystemMetrics } from '#lib/api.ts';
     import { fmtSize, fmtUptime, type CountSetter } from './adminUtils';
 
     type Props = {

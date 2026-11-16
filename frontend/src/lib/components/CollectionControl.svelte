@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { api, type CollectionItem, type CollectionKind, type CollectionStatus } from '$lib/api';
-    import { clickOutside } from '$lib/dismiss';
-    import { t } from '$lib/i18n.svelte';
+    import { api, type CollectionItem, type CollectionKind, type CollectionStatus } from '#lib/api.ts';
+    import { clickOutside } from '#lib/dismiss.ts';
+    import { t } from '#lib/i18n.svelte.ts';
     import Icon from './Icon.svelte';
 
     type Props = {

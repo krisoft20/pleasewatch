@@ -16,26 +16,26 @@
         type Media,
         type TmdbSearchItem,
         type User
-    } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
-    import { category } from '$lib/category.svelte';
-    import TopBar from '$lib/components/TopBar.svelte';
-    import ShelfRow from '$lib/components/ShelfRow.svelte';
-    import ContinueShelf from '$lib/components/ContinueShelf.svelte';
-    import DiscoverHero from '$lib/components/DiscoverHero.svelte';
-    import DiscoverBrowsePanel from '$lib/components/DiscoverBrowsePanel.svelte';
-    import TmdbShelf from '$lib/components/TmdbShelf.svelte';
-    import MangaShelf from '$lib/components/MangaShelf.svelte';
-    import BookShelf from '$lib/components/BookShelf.svelte';
-    import LiveShelf from '$lib/components/LiveShelf.svelte';
-    import TvShelf from '$lib/components/TvShelf.svelte';
-    import WhatsNew from '$lib/components/WhatsNew.svelte';
-    import BookGreeting from '$lib/components/BookGreeting.svelte';
-    import DailyQuote from '$lib/components/DailyQuote.svelte';
-    import MyBooks from '$lib/components/MyBooks.svelte';
-    import MediaCollection from '$lib/components/MediaCollection.svelte';
-    import ReadingNow from '$lib/components/ReadingNow.svelte';
-    import YearInReview from '$lib/components/YearInReview.svelte';
+    } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import { category } from '#lib/category.svelte.ts';
+    import TopBar from '#lib/components/TopBar.svelte';
+    import ShelfRow from '#lib/components/ShelfRow.svelte';
+    import ContinueShelf from '#lib/components/ContinueShelf.svelte';
+    import DiscoverHero from '#lib/components/DiscoverHero.svelte';
+    import DiscoverBrowsePanel from '#lib/components/DiscoverBrowsePanel.svelte';
+    import TmdbShelf from '#lib/components/TmdbShelf.svelte';
+    import MangaShelf from '#lib/components/MangaShelf.svelte';
+    import BookShelf from '#lib/components/BookShelf.svelte';
+    import LiveShelf from '#lib/components/LiveShelf.svelte';
+    import TvShelf from '#lib/components/TvShelf.svelte';
+    import WhatsNew from '#lib/components/WhatsNew.svelte';
+    import BookGreeting from '#lib/components/BookGreeting.svelte';
+    import DailyQuote from '#lib/components/DailyQuote.svelte';
+    import MyBooks from '#lib/components/MyBooks.svelte';
+    import MediaCollection from '#lib/components/MediaCollection.svelte';
+    import ReadingNow from '#lib/components/ReadingNow.svelte';
+    import YearInReview from '#lib/components/YearInReview.svelte';
 
     let user = $state<User | null>(null);
     let media = $state<Media[]>([]);
@@ -53,7 +53,7 @@
         const url = new URL(window.location.href);
         if (k === 'library') url.searchParams.delete('tab');
         else url.searchParams.set('tab', k);
-        goto(url.pathname + url.search, { replaceState: false, noScroll: true, keepFocus: true });
+        goto(url.pathname + url.search, { reset: false });
     }
 
     let mangaLib = $state<Manga[]>([]);
@@ -237,14 +237,14 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         if (user.role === 'admin') {
             try {
                 const s = await api.getSettings();
                 if (!s.tmdb_ready) {
-                    goto('/onboarding', { replaceState: true });
+                    goto('/onboarding', { replace: true });
                     return;
                 }
             } catch {}
@@ -354,16 +354,16 @@
         cat === 'tv'
             ? []
             : cat === 'live'
-            ? [
-                  { key: 'live', label: t('live.tab.now') },
-                  { key: 'teams', label: t('live.tab.teams') },
-                  { key: 'schedule', label: t('live.tab.schedule') }
-              ]
-            : [
-                  { key: 'library', label: t('tab.library') },
-                  { key: 'personal', label: t('tab.personal') },
-                  { key: 'discover', label: t('tab.discover') }
-              ]
+              ? [
+                    { key: 'live', label: t('live.tab.now') },
+                    { key: 'teams', label: t('live.tab.teams') },
+                    { key: 'schedule', label: t('live.tab.schedule') }
+                ]
+              : [
+                    { key: 'library', label: t('tab.library') },
+                    { key: 'personal', label: t('tab.personal') },
+                    { key: 'discover', label: t('tab.discover') }
+                ]
     );
 </script>
 

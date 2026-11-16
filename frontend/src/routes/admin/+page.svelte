@@ -1,29 +1,21 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api, type User } from '$lib/api';
-    import Icon from '$lib/components/Icon.svelte';
-    import TopBar from '$lib/components/TopBar.svelte';
-    import AdminClipsPanel from '$lib/components/admin/AdminClipsPanel.svelte';
-    import AdminDashboardPanel from '$lib/components/admin/AdminDashboardPanel.svelte';
-    import AdminDownloadsPanel from '$lib/components/admin/AdminDownloadsPanel.svelte';
-    import AdminLeaderboardPanel from '$lib/components/admin/AdminLeaderboardPanel.svelte';
-    import AdminLogsPanel from '$lib/components/admin/AdminLogsPanel.svelte';
-    import AdminPendingUsersPanel from '$lib/components/admin/AdminPendingUsersPanel.svelte';
-    import AdminSettingsPanel from '$lib/components/admin/AdminSettingsPanel.svelte';
-    import AdminStoragePanel from '$lib/components/admin/AdminStoragePanel.svelte';
-    import AdminUsersPanel from '$lib/components/admin/AdminUsersPanel.svelte';
+    import { api, type User } from '#lib/api.ts';
+    import Icon from '#lib/components/Icon.svelte';
+    import TopBar from '#lib/components/TopBar.svelte';
+    import AdminClipsPanel from '#lib/components/admin/AdminClipsPanel.svelte';
+    import AdminDashboardPanel from '#lib/components/admin/AdminDashboardPanel.svelte';
+    import AdminDownloadsPanel from '#lib/components/admin/AdminDownloadsPanel.svelte';
+    import AdminLeaderboardPanel from '#lib/components/admin/AdminLeaderboardPanel.svelte';
+    import AdminLogsPanel from '#lib/components/admin/AdminLogsPanel.svelte';
+    import AdminPendingUsersPanel from '#lib/components/admin/AdminPendingUsersPanel.svelte';
+    import AdminSettingsPanel from '#lib/components/admin/AdminSettingsPanel.svelte';
+    import AdminStoragePanel from '#lib/components/admin/AdminStoragePanel.svelte';
+    import AdminUsersPanel from '#lib/components/admin/AdminUsersPanel.svelte';
 
     type Tab =
-        | 'dashboard'
-        | 'storage'
-        | 'leaderboard'
-        | 'pending'
-        | 'users'
-        | 'downloads'
-        | 'clips'
-        | 'logs'
-        | 'settings';
+        'dashboard' | 'storage' | 'leaderboard' | 'pending' | 'users' | 'downloads' | 'clips' | 'logs' | 'settings';
 
     let me = $state<User | null>(null);
     let activeTab = $state<Tab>('dashboard');
@@ -56,11 +48,11 @@
         try {
             me = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         if (me.role !== 'admin') {
-            goto('/', { replaceState: true });
+            goto('/', { replace: true });
             return;
         }
         const requested = new URLSearchParams(window.location.search).get('tab') as Tab | null;

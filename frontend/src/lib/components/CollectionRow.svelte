@@ -1,6 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { api, type TmdbCollectionPart, type MediaWithEpisodes } from '$lib/api';
+    import { api, type TmdbCollectionPart, type MediaWithEpisodes } from '#lib/api.ts';
 
     let {
         parts,

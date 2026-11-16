@@ -1,7 +1,7 @@
 <script lang="ts">
-    import type { ShareKind } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
-    import ShareSheet from '$lib/components/ShareSheet.svelte';
+    import type { ShareKind } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import ShareSheet from '#lib/components/ShareSheet.svelte';
 
     let {
         kind,

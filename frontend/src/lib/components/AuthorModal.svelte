@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { api, type AuthorDetail } from '$lib/api';
-    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t, i18n } from '$lib/i18n.svelte';
+    import { api, type AuthorDetail } from '#lib/api.ts';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t, i18n } from '#lib/i18n.svelte.ts';
 
     let { olid, onClose }: { olid: string; onClose: () => void } = $props();
 

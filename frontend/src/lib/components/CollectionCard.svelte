@@ -1,5 +1,5 @@
 <script lang="ts" module>
-    import type { CollectionKind, CollectionStatus } from '$lib/api';
+    import type { CollectionKind, CollectionStatus } from '#lib/api.ts';
 
     export type CollectionCardItem = {
         key: string;
@@ -16,7 +16,7 @@
 </script>
 
 <script lang="ts">
-    import { i18n, t } from '$lib/i18n.svelte';
+    import { i18n, t } from '#lib/i18n.svelte.ts';
     import Icon from './Icon.svelte';
 
     let {

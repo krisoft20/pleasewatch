@@ -10,10 +10,10 @@
         type MangaRecommended,
         type MangaRelated,
         type User
-    } from '$lib/api';
-    import { t } from '$lib/i18n.svelte';
-    import TopBar from '$lib/components/TopBar.svelte';
-    import ShareButton from '$lib/components/ShareButton.svelte';
+    } from '#lib/api.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import TopBar from '#lib/components/TopBar.svelte';
+    import ShareButton from '#lib/components/ShareButton.svelte';
 
     const mdId = $derived(page.params.md_id ?? '');
 
@@ -44,7 +44,7 @@
         try {
             user = await api.me();
         } catch {
-            goto('/login', { replaceState: true });
+            goto('/login', { replace: true });
             return;
         }
         const d = await detailP;
@@ -187,13 +187,13 @@
     }
 
     function read(ch: MangaChapter, pageNum = 0) {
-        goto(`/read/${ch.id}?md=${mdId}${pageNum > 0 ? `&page=${pageNum}` : ''}`, { replaceState: true });
+        goto(`/read/${ch.id}?md=${mdId}${pageNum > 0 ? `&page=${pageNum}` : ''}`, { replace: true });
     }
 
     function continueReading() {
         const p = detail?.progress;
         if (!p) return;
-        goto(`/read/${p.chapter_id}?md=${mdId}&page=${p.page}`, { replaceState: true });
+        goto(`/read/${p.chapter_id}?md=${mdId}&page=${p.page}`, { replace: true });
     }
 
     const title = $derived(detail?.manga.title ?? 'manga');

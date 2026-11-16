@@ -1,7 +1,7 @@
 <script lang="ts">
-    import type { BookShelfItem } from '$lib/api';
-    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t, i18n } from '$lib/i18n.svelte';
+    import type { BookShelfItem } from '#lib/api.ts';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t, i18n } from '#lib/i18n.svelte.ts';
 
     let { items, year, onClose }: { items: BookShelfItem[]; year: number; onClose: () => void } = $props();
 

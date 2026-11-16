@@ -1,15 +1,15 @@
 <script lang="ts">
     import { tick } from 'svelte';
     import { goto, preloadData } from '$app/navigation';
-    import { api, type BookHit, type LiveGame, type MangaHit, type TmdbSearchItem, type User } from '$lib/api';
-    import { bookCoverSrc, retryBookCover, validateBookCover } from '$lib/bookCover';
-    import { t } from '$lib/i18n.svelte';
-    import { category, CATEGORIES, type Category } from '$lib/category.svelte';
-    import { abbrOf, darkLogo, ink, livePick, pairColors } from '$lib/live.svelte';
-    import { clickOutside } from '$lib/dismiss';
-    import UserMenu from '$lib/components/UserMenu.svelte';
-    import InboxList from '$lib/components/InboxList.svelte';
-    import { inbox } from '$lib/inbox.svelte';
+    import { api, type BookHit, type LiveGame, type MangaHit, type TmdbSearchItem, type User } from '#lib/api.ts';
+    import { bookCoverSrc, retryBookCover, validateBookCover } from '#lib/bookCover.ts';
+    import { t } from '#lib/i18n.svelte.ts';
+    import { category, CATEGORIES, type Category } from '#lib/category.svelte.ts';
+    import { abbrOf, darkLogo, ink, livePick, pairColors } from '#lib/live.svelte.ts';
+    import { clickOutside } from '#lib/dismiss.ts';
+    import UserMenu from '#lib/components/UserMenu.svelte';
+    import InboxList from '#lib/components/InboxList.svelte';
+    import { inbox } from '#lib/inbox.svelte.ts';
 
     type Tab = { key: string; label: string };
 
