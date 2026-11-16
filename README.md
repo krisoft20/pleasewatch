@@ -1,12 +1,51 @@
-# pleasewatch
+<h1 align="center">pleasewatch</h1>
 
-Self-hosted media server for movies, TV, anime, manga and books. Same idea as Plex or Jellyfin, with a built-in torrent picker, synced watch parties, dual subtitles for learning a language, and an epub and manga reader.
+<p align="center">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-Axum-B7410E?style=for-the-badge&logo=rust&logoColor=white">
+  <img alt="SvelteKit" src="https://img.shields.io/badge/SvelteKit-Svelte%205-FF3E00?style=for-the-badge&logo=svelte&logoColor=white">
+  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white">
+  <br>
+  <a href="https://github.com/krisoft20/pleasewatch/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/krisoft20/pleasewatch/ci.yml?branch=main&style=for-the-badge&label=ci"></a>
+  <a href="https://github.com/krisoft20/pleasewatch/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/krisoft20/pleasewatch?style=for-the-badge&color=F26B21"></a>
+  <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-44CC11?style=for-the-badge"></a>
+</p>
 
-One Rust binary with SQLite, a SvelteKit frontend, and a `setup.sh` that brings up the whole Docker stack (Caddy, qBittorrent, Jackett, Prowlarr) on a fresh VPS.
+Self-hosted media server for movies, TV, anime, manga and books. Same idea as Plex or Jellyfin, with a built-in
+torrent picker, synced watch parties, dual subtitles for learning a language, and an epub and manga reader.
 
-The project is built for private libraries and media you have the right to access. The torrent/indexer pieces are integrations, not a license to fetch copyrighted content.
+| **[Self-host](#self-host)** | **[Features](#what-it-does)** | **[Local dev](#local-dev)** |
+|:---:|:---:|:---:|
+| one script on a fresh VPS | everything it does, in one list | backend and frontend on your machine |
+
+One Rust binary with SQLite, a SvelteKit frontend, and a `setup.sh` that brings up the whole Docker stack
+(Caddy, qBittorrent, Jackett, Prowlarr) on a fresh Ubuntu or Debian box.
 
 ![library](docs/screenshots/library.webp)
+
+**For you if**
+
+- you have a VPS or a home server and want movies, shows, anime, manga and books in one place;
+- you watch with friends in other cities and want everyone on the same frame, not five seconds apart;
+- you learn a language from shows: a second subtitle track sits above the first, and hovering a word shows its match (en/pl/de).
+
+**Not for you if**
+
+- you need native TV or console apps. pleasewatch runs in the browser;
+- you only stream files you already have on a LAN. Jellyfin does that with less setup.
+
+## try it
+
+```sh
+sudo git clone https://github.com/krisoft20/pleasewatch /opt/pleasewatch
+cd /opt/pleasewatch/deploy
+sudo ./setup.sh --domain watch.example.com
+```
+
+Register the first account (it becomes admin), add a TMDB key on `/onboarding`, and you are in.
+The full walkthrough is under [self-host](#self-host).
+
+The project is built for private libraries and media you have the right to access. The torrent/indexer pieces are integrations, not a license to fetch copyrighted content.
 
 ![show page](docs/screenshots/show.webp)
 
