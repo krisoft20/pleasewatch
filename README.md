@@ -1,6 +1,8 @@
 # pleasewatch
 
-pleasewatch is a self-hosted media library and watch app. It has a Rust/Axum backend, SQLite storage, a SvelteKit frontend, and a Docker deploy stack with Caddy, qBittorrent, Jackett, and Prowlarr.
+Self-hosted media server for movies, TV, anime, manga and books. Same idea as Plex or Jellyfin, with a built-in torrent picker, synced watch parties, dual subtitles for learning a language, and an epub and manga reader.
+
+One Rust binary with SQLite, a SvelteKit frontend, and a `setup.sh` that brings up the whole Docker stack (Caddy, qBittorrent, Jackett, Prowlarr) on a fresh VPS.
 
 The project is built for private libraries and media you have the right to access. The torrent/indexer pieces are integrations, not a license to fetch copyrighted content.
 
@@ -15,11 +17,16 @@ The project is built for private libraries and media you have the right to acces
 - movie and tv search through TMDB
 - library pages for movies, shows, books, manga, and anime
 - continue watching, watch progress, collections, recommendations, and recently added shelves
-- browser video player with audio/subtitle picker, subtitle search/upload/sync, skip intro, next episode, clips, and watch together
+- browser video player with audio/subtitle picker, subtitle search/upload/sync, skip intro, next episode, and clips
+- watch together: rooms share the server clock and stay within about a quarter second of each other; an optional mode pauses the room while someone buffers
 - second subtitle track above the main one, hover a word to see its match in the other language (en/pl/de), click to hear it
+- epub reader and manga reader, with page and chapter counts on the shelf
+- send a title to another user, it lands in their inbox
 - live sports board with scores from ESPN, sources configured in .env
 - tv channels from the public iptv-org lists, dead and drm-protected ones filtered out
-- torrent picker backed by qBittorrent, Jackett, Prowlarr, and ext.to through FlareSolverr
+- torrent picker backed by qBittorrent, Jackett, Prowlarr, bitsearch, and ext.to through FlareSolverr
+- season packs skip episodes already on disk and junk files like .exe
+- upload your own video files; anything without a real video stream is rejected
 - first-run onboarding for TMDB and optional download services
 - admin panel for users, pending approvals, downloads, clips, storage, logs, settings, health, and watch leaderboard
 - sqlite-backed single binary backend, static frontend served by the backend in prod
