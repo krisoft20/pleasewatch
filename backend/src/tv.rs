@@ -209,7 +209,10 @@ fn parse_m3u(text: &str, country: &str) -> Vec<Channel> {
             if name.is_empty() {
                 continue;
             }
-            let hash = format!("{:x}", sha2::Sha256::digest(line.as_bytes()));
+            let hash: String = sha2::Sha256::digest(line.as_bytes())
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
             out.push(Channel {
                 id: format!("{country}-{}", &hash[..12]),
                 name,

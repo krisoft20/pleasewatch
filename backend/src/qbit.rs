@@ -216,9 +216,9 @@ pub fn spawn_auto_setup(state: std::sync::Arc<crate::AppState>) {
 fn random_password(len: usize) -> String {
     use rand::Rng;
     const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..len)
-        .map(|_| CHARS[rng.gen_range(0..CHARS.len())] as char)
+        .map(|_| CHARS[rng.random_range(0..CHARS.len())] as char)
         .collect()
 }
 

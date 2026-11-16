@@ -197,7 +197,10 @@ pub async fn resolve(placeholder: &str) -> Result<String, String> {
         let csrf = between(&html, "csrfToken = '", "'").ok_or("no csrf token")?;
 
         let ts = chrono::Utc::now().timestamp();
-        let hmac = format!("{:x}", sha2::Sha256::digest(format!("{id}|{ts}|{token}")));
+        let hmac: String = sha2::Sha256::digest(format!("{id}|{ts}|{token}"))
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         let mut form = reqwest::Url::parse("http://x/").unwrap();
         form.query_pairs_mut()
             .append_pair("torrent_id", &id.to_string())
