@@ -217,6 +217,12 @@ async fn handle_search(
         (t, i)
     };
     let found_count = title_items.len() + imdb_items.len();
+    let book_q = matches!(q.kind.as_deref(), Some("book"));
+    title_items.retain(|t| !is_bait(&t.title, book_q));
+    let imdb_items: Vec<_> = imdb_items
+        .into_iter()
+        .filter(|t| !is_bait(&t.title, book_q))
+        .collect();
 
     if is_book_kind && title_items.is_empty() && imdb_items.is_empty() {
         let tokens: Vec<&str> = q.q.split_whitespace().collect();
@@ -2638,4 +2644,31 @@ mod tests {
             }
         }
     }
+}
+
+fn is_bait(title: &str, book: bool) -> bool {
+    let t = title.trim().to_lowercase();
+    let exe = [
+        ".exe", ".scr", ".msi", ".bat", ".cmd", ".lnk", ".com", ".vbs", ".apk",
+    ];
+    if exe.iter().any(|e| t.ends_with(e)) {
+        return true;
+    }
+    !book && [".zip", ".rar", ".7z"].iter().any(|e| t.ends_with(e))
+}
+
+#[test]
+fn bait_titles_get_dropped() {
+    assert!(is_bait(
+        "Nocturne S01E05 Solitude [1080p] [WEB-DL] [ETHEL].exe",
+        false
+    ));
+    assert!(is_bait(
+        "Nocturne S01E05 1080p WEB H264-MeGusta.EXE ",
+        false
+    ));
+    assert!(is_bait("Show S01E01 1080p.rar", false));
+    assert!(!is_bait("Some Book epub.zip", true));
+    assert!(!is_bait("Nocturne S01E05 1080p WEB H264-MeGusta", false));
+    assert!(!is_bait("Show.S01E01.1080p.WEB.h264-EXE", false));
 }
