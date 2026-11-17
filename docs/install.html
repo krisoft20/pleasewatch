@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install pleasewatch: self-host on Ubuntu or Debian with Docker</title>
+<meta name="description" content="How to self-host pleasewatch on a fresh Ubuntu or Debian VPS: one setup script brings up Docker Compose with Caddy, qBittorrent, Jackett and Prowlarr. Storage, updates and local development.">
+<link rel="canonical" href="https://krisoft20.github.io/pleasewatch/install.html">
+<link rel="icon" type="image/png" href="favicon.png">
+<meta name="theme-color" content="#f6f0df">
+<meta name="author" content="krisoft20">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="pleasewatch">
+<meta property="og:title" content="Install pleasewatch: self-host on Ubuntu or Debian with Docker">
+<meta property="og:description" content="How to self-host pleasewatch on a fresh Ubuntu or Debian VPS: one setup script brings up Docker Compose with Caddy, qBittorrent, Jackett and Prowlarr. Storage, updates and local development.">
+<meta property="og:url" content="https://krisoft20.github.io/pleasewatch/install.html">
+<meta property="og:image" content="https://krisoft20.github.io/pleasewatch/img/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="fonts/shantell-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="zine.css">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<aside class="side">
+  <a class="logo" href="./"><img src="img/tv-hi.svg" width="58" height="58" alt=""><span>pleasewatch</span></a>
+  <nav aria-label="pages">
+    <a href="./"><svg aria-hidden="true"><use href="img/doodles.svg#play"/></svg>the zine</a>
+    <a href="features.html"><svg aria-hidden="true"><use href="img/doodles.svg#book"/></svg>features</a>
+    <a href="install.html" aria-current="page"><svg aria-hidden="true"><use href="img/doodles.svg#wrench"/></svg>install</a>
+    <a href="https://github.com/krisoft20/pleasewatch"><svg aria-hidden="true"><use href="img/doodles.svg#up"/></svg>github</a>
+  </nav>
+  <div class="toc">
+    <h2>on this page</h2>
+    <ol>
+      <li><a href="#server">on a fresh server</a></li>
+      <li><a href="#first">first run</a></li>
+      <li><a href="#storage">storage</a></li>
+      <li><a href="#update">update</a></li>
+      <li><a href="#checks">useful checks</a></li>
+      <li><a href="#dev">local dev</a></li>
+    </ol>
+  </div>
+</aside>
+<main>
+  <div class="sheet doc">
+    <h1>get it <span class="hl t swipe">running</span></h1>
+    <p class="lead" style="font-size:20px">A fresh Ubuntu or Debian box, one script, and a free TMDB key.</p>
+
+    <h2 id="server">on a fresh server</h2>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>sudo apt-get update
+sudo apt-get install -y curl git
+curl -fsSL https://get.docker.com | sudo sh
+
+sudo git clone https://github.com/krisoft20/pleasewatch /opt/pleasewatch
+cd /opt/pleasewatch/deploy</code></pre>
+</div>
+    <p>If you forked the repo, use your fork URL instead.</p>
+    <p>For a real domain, point DNS at the server first. Caddy handles HTTPS. Then run:</p>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>sudo ./setup.sh --domain watch.example.com</code></pre>
+</div>
+    <p>For a plain IP or LAN test, run it without a domain and open <code>http://your-server-ip</code>:</p>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>sudo ./setup.sh</code></pre>
+</div>
+    <p>If you do not want to expose a test install yet, tunnel port 80 and open <code>http://127.0.0.1:8080</code>:</p>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>ssh -L 8080:127.0.0.1:80 user@your-server-ip</code></pre>
+</div>
+
+    <h2 id="first">first run</h2>
+    <ol class="panels" style="margin-top:20px">
+      <li>Open the URL printed by setup.sh.<img src="img/tv-hi.svg" width="74" height="74" alt=""></li>
+      <li>Register the first account. It becomes admin.<img src="img/tv-oh.svg" width="74" height="74" alt=""></li>
+      <li>Sign in and add a TMDB key on /onboarding.<img src="img/tv-hi.svg" width="74" height="74" alt=""></li>
+      <li>Open the app.<img src="img/tv-wink.svg" width="74" height="74" alt=""></li>
+    </ol>
+    <p style="margin-top:26px">TMDB is the only required key for search and metadata. OMDB, Wyzie, qBittorrent, Jackett and Prowlarr can be configured later in <code>/admin?tab=settings</code>.</p>
+
+    <h2 id="storage">storage</h2>
+    <p>Media is stored on the server filesystem. New installs default to <code>/opt/pleasewatch/media</code>, mounted as <code>/media</code> inside the containers.</p>
+    <p>For a real library, pick a server with actual storage or mount an extra disk first. Then set this in <code>deploy/.env</code> before running setup:</p>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>PW_MEDIA_DIR=/mnt/storage/pleasewatch</code></pre>
+</div>
+    <p>qBittorrent and pleasewatch both mount that path as <code>/media</code>, so downloads and processed files stay on the same disk.</p>
+
+    <h2 id="update">update</h2>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>cd /opt/pleasewatch
+sudo git pull
+cd deploy
+sudo ./setup.sh</code></pre>
+</div>
+    <p>The setup script keeps the existing <code>.env</code>, database and media folders.</p>
+
+    <h2 id="checks">useful checks</h2>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>cd /opt/pleasewatch/deploy
+sudo docker compose -f docker-compose.simple.yml ps
+sudo docker compose logs -f pleasewatch</code></pre>
+</div>
+
+    <h2 id="dev">local dev</h2>
+    <p>Backend:</p>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>cd backend
+TMDB_API_KEY=your_key cargo run</code></pre>
+</div>
+    <p>Frontend:</p>
+<div class="cmd">
+<button class="btn" type="button" data-copy>copy me</button>
+<pre><code>cd frontend
+npm install
+npm run dev</code></pre>
+</div>
+    <p>For local download testing, run Jackett or Prowlarr and qBittorrent separately, then set their URLs and API keys in the admin settings.</p>
+    <p style="margin-top:40px"><a class="btn plain" href="https://github.com/krisoft20/pleasewatch">source on github</a></p>
+  </div>
+</main>
+<footer>
+  <div class="sheet">
+    <div>
+      <p>Built for private libraries and media you have the right to access. The torrent and indexer pieces are integrations, not a license to fetch copyrighted content.</p>
+      <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+      <p class="hand by">Made by <a href="https://github.com/krisoft20" rel="author">krisoft20</a>.</p>
+      <p>Source under <a href="https://github.com/krisoft20/pleasewatch/blob/main/LICENSE">AGPL-3.0-only</a>. The name and logo are covered by <a href="https://github.com/krisoft20/pleasewatch/blob/main/TRADEMARKS.md">TRADEMARKS.md</a>.</p>
+    </div>
+    <a class="tmdb" href="https://www.themoviedb.org"><img src="img/tmdb.svg" width="150" height="11" alt="The Movie Database" loading="lazy"></a>
+  </div>
+</footer>
+<script src="zine.js" defer></script>
+</body>
+</html>

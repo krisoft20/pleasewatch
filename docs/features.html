@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pleasewatch features: torrent picker, watch parties, dual subtitles, readers</title>
+<meta name="description" content="Everything pleasewatch does: library for movies, TV, anime, manga and books, torrent picker, synced watch together rooms, dual subtitles, epub and manga reader, live sports, TV channels and an admin panel.">
+<link rel="canonical" href="https://krisoft20.github.io/pleasewatch/features.html">
+<link rel="icon" type="image/png" href="favicon.png">
+<meta name="theme-color" content="#f6f0df">
+<meta name="author" content="krisoft20">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="pleasewatch">
+<meta property="og:title" content="pleasewatch features: torrent picker, watch parties, dual subtitles, readers">
+<meta property="og:description" content="Everything pleasewatch does: library for movies, TV, anime, manga and books, torrent picker, synced watch together rooms, dual subtitles, epub and manga reader, live sports, TV channels and an admin panel.">
+<meta property="og:url" content="https://krisoft20.github.io/pleasewatch/features.html">
+<meta property="og:image" content="https://krisoft20.github.io/pleasewatch/img/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="fonts/shantell-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="zine.css">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<aside class="side">
+  <a class="logo" href="./"><img src="img/tv-hi.svg" width="58" height="58" alt=""><span>pleasewatch</span></a>
+  <nav aria-label="pages">
+    <a href="./"><svg aria-hidden="true"><use href="img/doodles.svg#play"/></svg>the zine</a>
+    <a href="features.html" aria-current="page"><svg aria-hidden="true"><use href="img/doodles.svg#book"/></svg>features</a>
+    <a href="install.html"><svg aria-hidden="true"><use href="img/doodles.svg#wrench"/></svg>install</a>
+    <a href="https://github.com/krisoft20/pleasewatch"><svg aria-hidden="true"><use href="img/doodles.svg#up"/></svg>github</a>
+  </nav>
+  <p class="says"><b>want it?</b>One script on a fresh Ubuntu or Debian box. <a href="install.html">how to install</a></p>
+</aside>
+<main>
+  <div class="sheet doc">
+    <h1>every<span class="hl swipe">thing</span> it does</h1>
+    <p class="lead" style="font-size:20px">One app for movies, TV, anime, manga and books, on a server you run yourself.</p>
+    <div class="shots">
+<figure class="photo tilt-l"><img src="img/library.webp" width="1920" height="1014" loading="lazy" alt="pleasewatch library: continue watching, recently added and movies shelves"><figcaption>library: continue watching and recently added</figcaption></figure>
+<figure class="photo dbl tilt-r"><img src="img/show.webp" width="1920" height="1014" loading="lazy" alt="show page with seasons, watched episodes and trailer button"><figcaption>show page: seasons and watched marks</figcaption></figure>
+    </div>
+    <div class="groups" style="margin-top:64px">
+<section><h2><svg aria-hidden="true"><use href="img/doodles.svg#play"/></svg>watch</h2><ul><li>Movie and TV search through TMDB</li><li>Library pages for movies, shows and anime</li><li>Continue watching, watch progress, collections, recommendations and recently added shelves</li><li>Browser video player with an audio and subtitle picker</li><li>Subtitle search, upload and sync</li><li>Skip intro, next episode and clips</li><li>Upload your own video files. Anything without a real video stream is rejected</li></ul></section>
+<section><h2><svg aria-hidden="true"><use href="img/doodles.svg#clock"/></svg>watch together</h2><ul><li>Rooms share the server clock</li><li>Viewers stay within about a quarter second of each other</li><li>Optional mode pauses the room while someone buffers</li><li>Send a title to another user. It lands in their inbox</li></ul></section>
+<section><h2><svg aria-hidden="true"><use href="img/doodles.svg#subs"/></svg>dual subtitles</h2><ul><li>A second subtitle track above the main one</li><li>Hover a word to see its match in the other language</li><li>English, Polish and German</li><li>Click a word to hear it</li></ul></section>
+<section><h2><svg aria-hidden="true"><use href="img/doodles.svg#book"/></svg>read</h2><ul><li>Epub reader in the browser</li><li>Manga reader</li><li>Page and chapter counts on the shelf</li></ul></section>
+<section><h2><svg aria-hidden="true"><use href="img/doodles.svg#magnet"/></svg>download</h2><ul><li>Torrent picker backed by qBittorrent, Jackett, Prowlarr, bitsearch and ext.to through FlareSolverr</li><li>Season packs skip episodes already on disk</li><li>Junk files like .exe are dropped</li></ul></section>
+<section><h2><svg aria-hidden="true"><use href="img/doodles.svg#ball"/></svg>live</h2><ul><li>Live sports board with scores from ESPN. Sources are configured in .env</li><li>TV channels from the public iptv-org lists</li><li>Dead and DRM-protected channels are filtered out</li></ul></section>
+<section><h2><svg aria-hidden="true"><use href="img/doodles.svg#wrench"/></svg>run it</h2><ul><li>First-run onboarding for TMDB and the optional download services</li><li>Admin panel for users, pending approvals, downloads, clips, storage, logs, settings, health and a watch leaderboard</li><li>One Rust binary with SQLite. The static frontend is served by the backend</li><li>Docker Compose deployment with Caddy and the download services</li></ul></section>
+    </div>
+<figure class="photo tilt-r" style="max-width:760px;margin:80px auto 0"><img src="img/player.webp" width="1920" height="1080" loading="lazy" alt="video player with subtitles and playback controls"><figcaption>the player</figcaption></figure>
+    <p style="margin-top:64px"><a class="btn spark" href="install.html">install it</a></p>
+  </div>
+</main>
+<footer>
+  <div class="sheet">
+    <div>
+      <p>Built for private libraries and media you have the right to access. The torrent and indexer pieces are integrations, not a license to fetch copyrighted content.</p>
+      <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+      <p class="hand by">Made by <a href="https://github.com/krisoft20" rel="author">krisoft20</a>.</p>
+      <p>Source under <a href="https://github.com/krisoft20/pleasewatch/blob/main/LICENSE">AGPL-3.0-only</a>. The name and logo are covered by <a href="https://github.com/krisoft20/pleasewatch/blob/main/TRADEMARKS.md">TRADEMARKS.md</a>.</p>
+    </div>
+    <a class="tmdb" href="https://www.themoviedb.org"><img src="img/tmdb.svg" width="150" height="11" alt="The Movie Database" loading="lazy"></a>
+  </div>
+</footer>
+<script src="zine.js" defer></script>
+</body>
+</html>

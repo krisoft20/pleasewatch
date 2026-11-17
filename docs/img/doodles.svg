@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+<defs><style>symbol{overflow:visible}</style></defs>
+<symbol id="magnet" viewBox="0 0 48 48"><path d="M10 8 v16 c0 18 28 18 28 0 V8 h-9 v16 c0 7 -10 7 -10 0 V8Z M10 16 h9 M29 16 h9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="clock" viewBox="0 0 48 48"><path d="M24 6 c11 0 18 8 18 18 s-8 18 -18 18 S6 34 6 24 14 6 24 6Z M24 13 v12 l8 5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="subs" viewBox="0 0 48 48"><path d="M5 10 c12 -2 26 -2 38 0 c2 8 2 18 0 26 c-12 2 -26 2 -38 0 c-2 -8 -2 -18 0 -26Z M12 22 h14 M30 22 h6 M12 30 h6 M22 30 h14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="book" viewBox="0 0 48 48"><path d="M24 12 c-6 -4 -12 -4 -18 -2 v26 c6 -2 12 -2 18 2 c6 -4 12 -4 18 -2 V10 c-6 -2 -12 -2 -18 2Z M24 12 v26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="ball" viewBox="0 0 48 48"><path d="M24 6 c11 0 18 8 18 18 s-8 18 -18 18 S6 34 6 24 14 6 24 6Z M24 16 l8 6 -3 9 h-10 l-3 -9Z M24 16 v-9 M32 22 l9 -3 M29 31 l5 8 M19 31 l-5 8 M16 22 l-9 -3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="mail" viewBox="0 0 48 48"><path d="M6 12 c12 -1 24 -1 36 0 c1 8 1 16 0 24 c-12 1 -24 1 -36 0 c-1 -8 -1 -16 0 -24Z M7 13 l17 14 17 -14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="up" viewBox="0 0 48 48"><path d="M24 32 V8 M14 18 l10 -10 10 10 M8 30 v10 h32 V30" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="wrench" viewBox="0 0 48 48"><path d="M30 6 c-8 0 -12 8 -9 14 L7 34 c-3 4 3 10 7 7 l14 -14 c7 3 14 -2 14 -9 l-7 6 -6 -2 -2 -6 7 -7 c-1 -2 -2 -3 -4 -3Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="play" viewBox="0 0 48 48"><path d="M6 10 c12 -2 24 -2 36 0 c2 9 2 19 0 28 c-12 2 -24 2 -36 0 c-2 -9 -2 -19 0 -28Z M20 17 l12 7 -12 7Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="arrow" viewBox="0 0 120 40"><path pathLength="1" d="M4 24 C30 8 70 6 108 20 M94 8 l15 12 -18 8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>

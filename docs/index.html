@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pleasewatch: self-hosted media server for movies, TV, anime, manga and books</title>
+<meta name="description" content="pleasewatch is a free, open source, self-hosted media server. A Plex and Jellyfin alternative with a torrent picker, synced watch parties, dual subtitles and an epub and manga reader. Rust and SvelteKit.">
+<link rel="canonical" href="https://krisoft20.github.io/pleasewatch/">
+<link rel="icon" type="image/png" href="favicon.png">
+<meta name="theme-color" content="#f6f0df">
+<meta name="author" content="krisoft20">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="pleasewatch">
+<meta property="og:title" content="pleasewatch: self-hosted media server">
+<meta property="og:description" content="Movies, TV, anime, manga and books on your own server. Torrent picker, synced watch parties and dual subtitles built in.">
+<meta property="og:url" content="https://krisoft20.github.io/pleasewatch/">
+<meta property="og:image" content="https://krisoft20.github.io/pleasewatch/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="pleasewatch library with continue watching and recently added shelves">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="fonts/shantell-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="zine.css">
+<script>document.documentElement.classList.add('js')</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "pleasewatch",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "Linux, Docker",
+  "description": "Self-hosted media server for movies, TV, anime, manga and books, with a torrent picker, synced watch parties, dual subtitles and an epub and manga reader.",
+  "url": "https://krisoft20.github.io/pleasewatch/",
+  "downloadUrl": "https://github.com/krisoft20/pleasewatch",
+  "codeRepository": "https://github.com/krisoft20/pleasewatch",
+  "programmingLanguage": ["Rust", "TypeScript", "Svelte"],
+  "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "screenshot": "https://krisoft20.github.io/pleasewatch/img/og.jpg",
+  "sameAs": ["https://github.com/krisoft20/pleasewatch"],
+  "author": { "@type": "Person", "name": "krisoft20", "url": "https://github.com/krisoft20" },
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</head>
+<body>
+<aside class="side">
+  <a class="logo" href="./"><img src="img/tv-hi.svg" width="58" height="58" alt=""><span>pleasewatch</span></a>
+  <nav aria-label="pages">
+    <a href="./" aria-current="page"><svg aria-hidden="true"><use href="img/doodles.svg#play"/></svg>the zine</a>
+    <a href="features.html"><svg aria-hidden="true"><use href="img/doodles.svg#book"/></svg>features</a>
+    <a href="install.html"><svg aria-hidden="true"><use href="img/doodles.svg#wrench"/></svg>install</a>
+    <a href="https://github.com/krisoft20/pleasewatch"><svg aria-hidden="true"><use href="img/doodles.svg#up"/></svg>github</a>
+  </nav>
+  <div class="toc">
+    <h2>in this zine</h2>
+    <ol>
+      <li><a href="#what">what is it</a></li>
+      <li><a href="#inside">what's inside</a></li>
+      <li><a href="#together">watch together</a></li>
+      <li><a href="#subs">two subtitles</a></li>
+      <li><a href="#run">get it running</a></li>
+      <li><a href="#built">how it's built</a></li>
+    </ol>
+  </div>
+  <p class="says"><b>no account, no cloud</b>It runs on your box. The only key you need is a free one from TMDB. <a href="install.html">how to install</a></p>
+</aside>
+
+<main>
+  <div class="sheet cover">
+    <div>
+      <h1><span class="hl p swipe">please</span><br>watch<small>A self-hosted media server for movies, TV, anime, manga and books.</small></h1>
+      <p class="lead">Same idea as Plex or Jellyfin. The torrent picker, watch parties, dual subtitles and the readers are already inside, so there is nothing to bolt on.</p>
+      <div class="cta">
+        <a class="btn spark" href="#run">get it running</a>
+        <a href="https://github.com/krisoft20/pleasewatch">source on github</a>
+      </div>
+      <p class="hand byline">a zine by <a href="https://github.com/krisoft20" rel="author">krisoft20</a></p>
+      <div class="bubble">
+        <img src="img/tv-hi.svg" width="96" height="96" alt="">
+        <p>Free and open source. One script on a fresh VPS and your library is up.</p>
+      </div>
+    </div>
+    <figure class="photo tilt-r">
+      <img src="img/library.webp" width="1920" height="1014" alt="pleasewatch library: continue watching, recently added and movies shelves" fetchpriority="high">
+      <figcaption>the library, on a real install</figcaption>
+      <span class="note pinkt" style="left:6%;bottom:-92px;transform:rotate(-4deg)"><svg class="draw" aria-hidden="true" style="transform:rotate(-62deg);margin:0 0 4px 30px"><use href="img/doodles.svg#arrow"/></svg>picks up where you stopped</span>
+      <span class="note pinkt" style="right:2%;bottom:-74px;transform:rotate(3deg)">movies, series and anime on one shelf</span>
+    </figure>
+  </div>
+
+  <hr class="rule">
+
+  <section class="chapter" id="what">
+    <div class="sheet">
+      <header><span class="num">1</span><h2>what is it</h2></header>
+      <div class="flow">
+        <div class="box"><b>a server</b><span>fresh Ubuntu or Debian, a VPS or a box at home</span></div>
+        <svg class="draw" aria-hidden="true"><use href="img/doodles.svg#arrow"/></svg>
+        <div class="box y"><b>setup.sh</b><span>brings up Docker, Caddy, qBittorrent, Jackett and Prowlarr</span></div>
+        <svg class="draw" aria-hidden="true"><use href="img/doodles.svg#arrow"/></svg>
+        <div class="box"><b>your library</b><span>in any browser, or installed as an app on your phone</span></div>
+      </div>
+      <div class="two">
+        <div>
+          <p>pleasewatch is one Rust binary with an SQLite file next to it. It serves the web app, plays your video, keeps watch progress for every user and talks to the download services.</p>
+          <p>You search a title, pick a release, and it lands in the library with posters, episodes and subtitles sorted out.</p>
+        </div>
+        <div class="bubble">
+          <img src="img/tv-wink.svg" width="96" height="96" alt="">
+          <p>Built for private libraries and media you have the right to access.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="chapter" id="inside">
+    <div class="sheet">
+      <header><span class="num">2</span><h2>what's inside</h2></header>
+      <div class="two">
+        <figure class="photo dbl tilt-l">
+          <img src="img/show.webp" width="1920" height="1014" loading="lazy" alt="show page with seasons, watched episodes and trailer button">
+          <figcaption>a show page: seasons, watched marks, trailer</figcaption>
+        </figure>
+        <figure class="photo tilt-r">
+          <img src="img/player.webp" width="1920" height="1080" loading="lazy" alt="video player with subtitles and playback controls">
+          <figcaption>the player: audio and subtitle picker, clips, skip intro</figcaption>
+        </figure>
+      </div>
+      <div class="stickies">
+        <div class="sticky"><svg aria-hidden="true"><use href="img/doodles.svg#magnet"/></svg><h3>torrent picker</h3><p>Search qBittorrent, Jackett and Prowlarr from the title page. Season packs skip episodes already on disk and junk files like .exe.</p></div>
+        <div class="sticky"><svg aria-hidden="true"><use href="img/doodles.svg#book"/></svg><h3>epub and manga reader</h3><p>Books and manga open in the browser, with page and chapter counts on the shelf.</p></div>
+        <div class="sticky"><svg aria-hidden="true"><use href="img/doodles.svg#ball"/></svg><h3>live</h3><p>Sports board with ESPN scores, TV channels from iptv-org.</p></div>
+        <div class="sticky"><svg aria-hidden="true"><use href="img/doodles.svg#mail"/></svg><h3>inbox</h3><p>Send a title to another user. It lands in their inbox.</p></div>
+        <div class="sticky"><svg aria-hidden="true"><use href="img/doodles.svg#up"/></svg><h3>uploads</h3><p>Add your own video files. Anything without a real video stream is rejected.</p></div>
+        <div class="sticky"><svg aria-hidden="true"><use href="img/doodles.svg#wrench"/></svg><h3>admin panel</h3><p>Users and approvals, downloads, clips, storage, logs, health and a watch leaderboard.</p></div>
+        <div class="sticky"><svg aria-hidden="true"><use href="img/doodles.svg#play"/></svg><h3>shelves</h3><p>Continue watching, collections, recommendations and recently added, for movies, shows and anime.</p></div>
+      </div>
+      <p class="more"><a href="features.html">the full feature list</a></p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="chapter" id="together">
+    <div class="sheet">
+      <header><span class="num">3</span><h2>watch together</h2></header>
+      <div class="two">
+        <div>
+          <p>Everyone in a room plays against <span class="hl swipe">the server clock</span>, so nobody has to count down "3, 2, 1, play". Viewers stay within about a quarter second of each other.</p>
+          <p>There is an optional mode that pauses the whole room while someone buffers. Press the button to try it.</p>
+        </div>
+        <div class="room">
+          <div class="server">server clock</div>
+          <div class="wires"></div>
+          <div class="screens">
+            <div class="screen"><b>you</b><output>12:34.0</output><i></i></div>
+            <div class="screen"><b>kasia</b><output>12:34.0</output><i></i></div>
+          </div>
+          <div class="ctl">
+            <button class="btn" type="button">kasia buffers</button>
+            <label><input type="checkbox" checked> wait for everyone</label>
+            <img src="img/tv-hi.svg" width="64" height="64" alt="" style="margin:14px 0 0 auto">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="chapter" id="subs">
+    <div class="sheet">
+      <header><span class="num">4</span><h2>two subtitles at once</h2></header>
+      <div class="strip">
+        <p class="second" lang="pl"><button data-k="1">Nie</button> <button data-k="2">chcę</button> z <button data-k="3">tobą</button> <button data-k="4">rozmawiać.</button></p>
+        <p lang="en">I <button data-k="1">don't</button> <button data-k="2">want</button> to <button data-k="4">talk</button> to <button data-k="3">you.</button></p>
+      </div>
+      <p class="hand">Hover or tap a word to see its match in the other language. Click to hear it.</p>
+      <p>A second subtitle track sits above the main one, in English, Polish or German. Handy when you are learning a language from the shows you already watch.</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="chapter" id="run">
+    <div class="sheet">
+      <header><span class="num">5</span><h2>get it running</h2></header>
+      <div class="two wide-l" style="align-items:start">
+        <div class="cmd">
+          <button class="btn" type="button" data-copy>copy me</button>
+<pre><code>sudo git clone https://github.com/krisoft20/pleasewatch /opt/pleasewatch
+cd /opt/pleasewatch/deploy
+<mark>sudo ./setup.sh --domain watch.example.com</mark></code></pre>
+        </div>
+        <div>
+          <p>Run this on a fresh Ubuntu or Debian box with Docker. Point your domain at the server first and Caddy sorts out HTTPS.</p>
+          <p>No domain yet? Run <code>sudo ./setup.sh</code> and open the server IP.</p>
+          <p class="more" style="margin-top:14px"><a href="install.html">the full install guide</a></p>
+        </div>
+      </div>
+      <ol class="panels">
+        <li>Open the URL printed by setup.sh.<img src="img/tv-hi.svg" width="74" height="74" alt="" loading="lazy"></li>
+        <li>Register the first account. It becomes admin.<img src="img/tv-oh.svg" width="74" height="74" alt="" loading="lazy"></li>
+        <li>Add a free TMDB key on /onboarding.<img src="img/tv-hi.svg" width="74" height="74" alt="" loading="lazy"></li>
+        <li>Open the app. Download services can wait.<img src="img/tv-wink.svg" width="74" height="74" alt="" loading="lazy"></li>
+      </ol>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="chapter" id="built">
+    <div class="sheet">
+      <header><span class="num">6</span><h2>how it's built</h2></header>
+      <div class="arch">
+        <div class="box"><b>browser</b><span>SvelteKit app</span></div>
+        <svg class="draw" aria-hidden="true"><use href="img/doodles.svg#arrow"/></svg>
+        <div class="box"><b>Caddy</b><span>HTTPS</span></div>
+        <svg class="draw" aria-hidden="true"><use href="img/doodles.svg#arrow"/></svg>
+        <div class="box big"><b>pleasewatch</b><span>one Rust binary: API, player, static files</span><em>SQLite + media folders on disk</em></div>
+        <svg class="draw" aria-hidden="true"><use href="img/doodles.svg#arrow"/></svg>
+        <div class="box"><b>downloads</b><span>qBittorrent, Jackett, Prowlarr</span></div>
+      </div>
+      <div class="two" style="align-items:start">
+        <table>
+          <tr><th>backend</th><td>Rust, Axum, rusqlite, Tokio, reqwest</td></tr>
+          <tr><th>frontend</th><td>SvelteKit, Svelte 5, Vite, adapter-static</td></tr>
+          <tr><th>storage</th><td>SQLite and plain media folders</td></tr>
+          <tr><th>deploy</th><td>Docker Compose, Caddy</td></tr>
+          <tr><th>license</th><td>AGPL-3.0-only</td></tr>
+        </table>
+        <div>
+          <p>No ORM and no separate web server for the frontend. The backend serves the static build, so production is a single container plus the download services.</p>
+          <p><a class="btn plain" href="https://github.com/krisoft20/pleasewatch">read the source</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="sheet">
+    <div>
+      <p>Built for private libraries and media you have the right to access. The torrent and indexer pieces are integrations, not a license to fetch copyrighted content.</p>
+      <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+      <p class="hand by">Made by <a href="https://github.com/krisoft20" rel="author">krisoft20</a>.</p>
+      <p>Source under <a href="https://github.com/krisoft20/pleasewatch/blob/main/LICENSE">AGPL-3.0-only</a>. The name and logo are covered by <a href="https://github.com/krisoft20/pleasewatch/blob/main/TRADEMARKS.md">TRADEMARKS.md</a>.</p>
+    </div>
+    <a class="tmdb" href="https://www.themoviedb.org"><img src="img/tmdb.svg" width="150" height="11" alt="The Movie Database" loading="lazy"></a>
+  </div>
+</footer>
+<script src="zine.js" defer></script>
+</body>
+</html>

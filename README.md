@@ -11,6 +11,8 @@
   <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-44CC11?style=for-the-badge"></a>
 </p>
 
+<p align="center"><a href="https://krisoft20.github.io/pleasewatch/">krisoft20.github.io/pleasewatch</a></p>
+
 Self-hosted media server for movies, TV, anime, manga and books. Same idea as Plex or Jellyfin, with a built-in
 torrent picker, synced watch parties, dual subtitles for learning a language, and an epub and manga reader.
 
