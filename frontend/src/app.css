@@ -2754,6 +2754,8 @@ input {
     height: 100%;
     object-fit: cover;
     object-position: center 15%;
+    pointer-events: none;
+    user-select: none;
 }
 .pw-v1-hero-grad-x,
 .pw-v1-hero-grad-y {
